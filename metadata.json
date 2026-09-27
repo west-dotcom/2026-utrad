@@ -1,0 +1,6 @@
+{
+  "name": "Crypto Bot Ledger & Sheets Dashboard",
+  "description": "Historical transactions ledger, daily snapshot tracker, and analytics dashboard for crypto trading bots, with two-way Google Sheets sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
