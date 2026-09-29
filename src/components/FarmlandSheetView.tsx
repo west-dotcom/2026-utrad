@@ -40,8 +40,15 @@ import {
   CashFlowType,
   INITIAL_ACCOUNTS,
   getInitialAccountData,
+  loadAccountData,
   recalculateDailyLog,
+  getStoredAccountsList,
+  renameAccountInStorage,
+  AccountMeta,
 } from '../data/accountsData';
+import { AccountSettingsModal } from './AccountSettingsModal';
+import { AddAccountModal } from './AddAccountModal';
+import { RenameAccountModal } from './RenameAccountModal';
 
 interface FarmlandSheetViewProps {
   onSyncToGoogleSheets?: () => void;
@@ -54,37 +61,56 @@ export function FarmlandSheetView({
   selectedAccountId: externalAccountId,
   onSelectAccount: externalSelectAccount,
 }: FarmlandSheetViewProps) {
-  // Accounts list (farmland, firmly, gadget + custom)
-  const [accounts, setAccounts] = useState<{ id: string; name: string; type: string; icon: string }[]>(() => {
-    try {
-      const saved = localStorage.getItem('greenharvest_accounts_list_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.warn('Failed loading accounts list', e);
-    }
-    return INITIAL_ACCOUNTS;
-  });
+  // Accounts list (farmland, firmly, gadget + custom user-added accounts)
+  const [accounts, setAccounts] = useState<AccountMeta[]>(() => getStoredAccountsList());
+
+  // Listen to accounts updates from any modal or header action
+  useEffect(() => {
+    const handleUpdate = () => {
+      setAccounts(getStoredAccountsList());
+    };
+    window.addEventListener('greenharvest_accounts_updated', handleUpdate);
+    return () => window.removeEventListener('greenharvest_accounts_updated', handleUpdate);
+  }, []);
 
   // Active account ID
   const [activeAccountId, setActiveAccountId] = useState<string>(() => {
-    return externalAccountId || localStorage.getItem('greenharvest_active_account_id_v2') || 'farmland';
+    return externalAccountId || localStorage.getItem('greenharvest_active_account_id_v3') || 'farmland';
   });
 
-  // Keep in sync with external account prop if passed
+  // Keep in sync with external account prop whenever user switches account from header or dashboard
   useEffect(() => {
     if (externalAccountId && externalAccountId !== activeAccountId) {
       setActiveAccountId(externalAccountId);
+      try {
+        const fresh = loadAccountData(externalAccountId);
+        setAccountData(fresh);
+      } catch (e) {
+        console.warn('Failed loading account in FarmlandSheetView', e);
+      }
+      setDailyLogPage(1);
+      setSchedulePage(1);
     }
-  }, [externalAccountId]);
+  }, [externalAccountId, activeAccountId]);
 
-  // Account dropdown state
+  // Account dropdown and modal states
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [newAccountModalOpen, setNewAccountModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountType, setNewAccountType] = useState('Firm Arbitrage');
+
+  // Detailed inputs when adding a new account (gas fees, trade loss / money in question, starting capital, targets)
+  const [newStartingCapital, setNewStartingCapital] = useState('5000');
+  const [newTradeLoss, setNewTradeLoss] = useState('2000');
+  const [newGasFee, setNewGasFee] = useState('500');
+  const [newTargetDailyRate, setNewTargetDailyRate] = useState('15.0');
+  const [newPlannedDailyProfit, setNewPlannedDailyProfit] = useState('1280');
+
+  // Rename account modal state
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [renameTargetId, setRenameTargetId] = useState('');
+  const [renameTargetName, setRenameTargetName] = useState('');
 
   // Sub-tabs matching the user's specific requested sections
   // 1. Dashboard, 2. Daily Log, 3. Cash Flows, 4. Assumptions, 5. 2-Year Schedule (26-Page)
@@ -92,10 +118,19 @@ export function FarmlandSheetView({
 
   // Load active account data from localStorage or default
   const [accountData, setAccountData] = useState<AccountData>(() => {
-    const initId = externalAccountId || localStorage.getItem('greenharvest_active_account_id_v2') || 'farmland';
+    const initId = externalAccountId || localStorage.getItem('greenharvest_active_account_id_v3') || 'farmland';
     try {
-      const saved = localStorage.getItem(`greenharvest_account_data_${initId}_v2`);
+      const saved = localStorage.getItem(`greenharvest_account_data_${initId}_v3`);
       if (saved) return JSON.parse(saved);
+
+      // Check if v2 had 2026 data
+      const oldV2 = localStorage.getItem(`greenharvest_account_data_${initId}_v2`);
+      if (oldV2) {
+        const parsed = JSON.parse(oldV2);
+        if (parsed?.dailyLog?.[0]?.day && parsed.dailyLog[0].day.includes('2026')) {
+          return parsed;
+        }
+      }
     } catch (e) {
       console.warn('Failed loading account data', e);
     }
@@ -109,25 +144,24 @@ export function FarmlandSheetView({
       externalSelectAccount(accId);
     }
     try {
+      localStorage.setItem('greenharvest_active_account_id_v3', accId);
       localStorage.setItem('greenharvest_active_account_id_v2', accId);
-      const saved = localStorage.getItem(`greenharvest_account_data_${accId}_v2`);
-      if (saved) {
-        setAccountData(JSON.parse(saved));
-      } else {
-        const fresh = getInitialAccountData(accId);
-        setAccountData(fresh);
-      }
+      const data = loadAccountData(accId);
+      setAccountData(data);
     } catch (e) {
       console.warn('Failed to switch account in storage', e);
       setAccountData(getInitialAccountData(accId));
     }
     setIsDropdownOpen(false);
     setDailyLogPage(1);
+    setSchedulePage(1);
   };
 
   // Save accountData to localStorage whenever it changes
   useEffect(() => {
+    if (!accountData || !accountData.id) return;
     try {
+      localStorage.setItem(`greenharvest_account_data_${accountData.id}_v3`, JSON.stringify(accountData));
       localStorage.setItem(`greenharvest_account_data_${accountData.id}_v2`, JSON.stringify(accountData));
     } catch (err) {
       console.error('Failed saving accountData', err);
@@ -142,6 +176,36 @@ export function FarmlandSheetView({
       console.error('Failed saving accounts list', err);
     }
   }, [accounts]);
+
+  // Listen for account settings modal updates so view updates instantaneously
+  useEffect(() => {
+    const handleSettingsUpdated = (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.accountId === accountData.id) {
+        if (detail.accountData) {
+          setAccountData(detail.accountData);
+        } else if (detail.assumptions) {
+          setAccountData((prev) => {
+            const recalculated = recalculateDailyLog(
+              prev.dailyLog,
+              detail.assumptions.startingCapital,
+              detail.assumptions.targetDailyRatePct
+            );
+            return {
+              ...prev,
+              assumptions: detail.assumptions,
+              dailyLog: recalculated,
+            };
+          });
+        }
+      }
+    };
+
+    window.addEventListener('greenharvest_account_settings_updated', handleSettingsUpdated);
+    return () => {
+      window.removeEventListener('greenharvest_account_settings_updated', handleSettingsUpdated);
+    };
+  }, [accountData.id]);
 
   // Pagination for Daily Log (25 rows per page)
   const [dailyLogPage, setDailyLogPage] = useState<number>(1);
@@ -181,7 +245,34 @@ export function FarmlandSheetView({
   const [cfAsset, setCfAsset] = useState('USDT');
   const [cfNotes, setCfNotes] = useState('');
 
-  // Assumptions edits
+  // Local string states for fluid number editing without snapping to 0 or locking while typing
+  const [startingCapStr, setStartingCapStr] = useState<string>(() => String(accountData.assumptions.startingCapital));
+  const [targetRateStr, setTargetRateStr] = useState<string>(() => String(accountData.assumptions.targetDailyRatePct));
+  const [dailyProfitStr, setDailyProfitStr] = useState<string>(() => String(accountData.assumptions.plannedDailyProfit));
+  const [targetCapStr, setTargetCapStr] = useState<string>(() => String(accountData.assumptions.targetCapital));
+  const [tradeLossStr, setTradeLossStr] = useState<string>(() => String(accountData.oneOffLosses.tradeLoss));
+  const [ugasFeeStr, setUgasFeeStr] = useState<string>(() => String(accountData.oneOffLosses.ugasFee));
+  const [assumptionsSavedAlert, setAssumptionsSavedAlert] = useState<boolean>(false);
+
+  // Keep local string states in sync when account switches or resets
+  useEffect(() => {
+    setStartingCapStr(String(accountData.assumptions.startingCapital));
+    setTargetRateStr(String(accountData.assumptions.targetDailyRatePct));
+    setDailyProfitStr(String(accountData.assumptions.plannedDailyProfit));
+    setTargetCapStr(String(accountData.assumptions.targetCapital));
+    setTradeLossStr(String(accountData.oneOffLosses.tradeLoss));
+    setUgasFeeStr(String(accountData.oneOffLosses.ugasFee));
+  }, [
+    accountData.id,
+    accountData.assumptions.startingCapital,
+    accountData.assumptions.targetDailyRatePct,
+    accountData.assumptions.plannedDailyProfit,
+    accountData.assumptions.targetCapital,
+    accountData.oneOffLosses.tradeLoss,
+    accountData.oneOffLosses.ugasFee,
+  ]);
+
+  // Core Assumptions update function with cascading formula recalculation
   const handleUpdateAssumptions = (key: keyof AccountData['assumptions'], val: number) => {
     setAccountData((prev) => {
       const updatedAssumptions = { ...prev.assumptions, [key]: val };
@@ -199,7 +290,40 @@ export function FarmlandSheetView({
     });
   };
 
-  // One-off losses edits
+  // Fluid input change handler that allows typing decimals, backspacing, and editing freely
+  const handleTypeAssumption = (
+    key: keyof AccountData['assumptions'],
+    rawVal: string,
+    setLocal: (v: string) => void
+  ) => {
+    setLocal(rawVal);
+    const parsed = parseFloat(rawVal);
+    if (!isNaN(parsed) && parsed >= 0) {
+      handleUpdateAssumptions(key, parsed);
+      setAssumptionsSavedAlert(true);
+      setTimeout(() => setAssumptionsSavedAlert(false), 2500);
+    }
+  };
+
+  // Preset chip 1-click update
+  const handleApplyPreset = (key: keyof AccountData['assumptions'], val: number) => {
+    if (key === 'startingCapital') setStartingCapStr(String(val));
+    if (key === 'targetDailyRatePct') setTargetRateStr(String(val));
+    if (key === 'plannedDailyProfit') setDailyProfitStr(String(val));
+    if (key === 'targetCapital') setTargetCapStr(String(val));
+    handleUpdateAssumptions(key, val);
+    setAssumptionsSavedAlert(true);
+    setTimeout(() => setAssumptionsSavedAlert(false), 2500);
+  };
+
+  // Stepper buttons (+ / -)
+  const handleStepAssumption = (key: keyof AccountData['assumptions'], step: number) => {
+    const current = accountData.assumptions[key] || 0;
+    const nextVal = Math.max(0, parseFloat((current + step).toFixed(2)));
+    handleApplyPreset(key, nextVal);
+  };
+
+  // One-off losses edits with smooth typing
   const handleUpdateOneOffLosses = (tradeLoss: number, ugasFee: number) => {
     setAccountData((prev) => {
       const combined = tradeLoss + ugasFee;
@@ -233,6 +357,58 @@ export function FarmlandSheetView({
         dailyLog: recalculated,
       };
     });
+  };
+
+  const handleTypeTradeLoss = (valStr: string) => {
+    setTradeLossStr(valStr);
+    const parsed = parseFloat(valStr);
+    if (!isNaN(parsed)) {
+      handleUpdateOneOffLosses(parsed, accountData.oneOffLosses.ugasFee);
+    }
+  };
+
+  const handleTypeUgasFee = (valStr: string) => {
+    setUgasFeeStr(valStr);
+    const parsed = parseFloat(valStr);
+    if (!isNaN(parsed)) {
+      handleUpdateOneOffLosses(accountData.oneOffLosses.tradeLoss, parsed);
+    }
+  };
+
+  // Batch Apply Planned Daily Profit to next 14 days or empty rows
+  const handleApplyPlannedProfitToEmptyDays = () => {
+    const profit = parseFloat(dailyProfitStr) || accountData.assumptions.plannedDailyProfit;
+    setAccountData((prev) => {
+      const updatedRows = prev.dailyLog.map((row, idx) => {
+        if (idx === 0) return row; // Row 0 is the initial loss row
+        // Pre-fill next 14 days or any row without entries
+        if (idx <= 14 || row.dailyReturn === 0) {
+          return {
+            ...row,
+            dailyReturn: profit,
+            notes: row.notes || `Applied planned profit ($${profit.toLocaleString()})`,
+          };
+        }
+        return row;
+      });
+
+      const recalculated = recalculateDailyLog(
+        updatedRows,
+        prev.assumptions.startingCapital,
+        prev.assumptions.targetDailyRatePct
+      );
+
+      return {
+        ...prev,
+        assumptions: {
+          ...prev.assumptions,
+          plannedDailyProfit: profit,
+        },
+        dailyLog: recalculated,
+      };
+    });
+    setAssumptionsSavedAlert(true);
+    setTimeout(() => setAssumptionsSavedAlert(false), 3000);
   };
 
   // Compute Cash Flows Totals that automatically feed the Dashboard
@@ -336,7 +512,7 @@ export function FarmlandSheetView({
         if (r.id === id) {
           return {
             ...r,
-            day: editDayVal || r.day,
+            day: editDayVal !== undefined ? editDayVal.trim() : (r.day || ''),
             dailyReturn: retVal,
             notes: editNotesVal,
           };
@@ -447,18 +623,146 @@ export function FarmlandSheetView({
     }
   };
 
-  // Create New Account
+  // Rename Account Handler
+  const handleRenameAccount = (accId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+
+    // 1. Update in accounts array & localStorage
+    setAccounts((prev) => {
+      const updated = prev.map((a) => (a.id === accId ? { ...a, name: trimmed } : a));
+      try {
+        localStorage.setItem('greenharvest_accounts_list_v2', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed saving updated accounts list', e);
+      }
+      return updated;
+    });
+
+    // 2. If it's the currently active accountData, update its name too
+    if (accountData.id === accId) {
+      setAccountData((prev) => {
+        const updated = { ...prev, name: trimmed };
+        try {
+          localStorage.setItem(`greenharvest_account_data_${accId}_v3`, JSON.stringify(updated));
+          localStorage.setItem(`greenharvest_account_data_${accId}_v2`, JSON.stringify(updated));
+        } catch (e) {
+          console.warn(e);
+        }
+        return updated;
+      });
+    } else {
+      // Update that account's stored data in localStorage
+      try {
+        const stored = localStorage.getItem(`greenharvest_account_data_${accId}_v3`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          parsed.name = trimmed;
+          localStorage.setItem(`greenharvest_account_data_${accId}_v3`, JSON.stringify(parsed));
+          localStorage.setItem(`greenharvest_account_data_${accId}_v2`, JSON.stringify(parsed));
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    // 3. Dispatch event for header & tabs
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('greenharvest_accounts_updated', {
+          detail: { accountId: accId, name: trimmed },
+        })
+      );
+    }
+
+    setRenameModalOpen(false);
+  };
+
+  // Create New Account with customizable gas fees, money in question / trade loss, starting capital, and targets
   const handleCreateNewAccount = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAccountName.trim()) return;
 
-    const newId = newAccountName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const startCap = Math.max(0, parseFloat(newStartingCapital) || 5000);
+    const tradeLossVal = Math.abs(parseFloat(newTradeLoss) || 0);
+    const gasFeeVal = Math.abs(parseFloat(newGasFee) || 0);
+    const combinedInitialLoss = -(tradeLossVal + gasFeeVal);
+    const targetRate = Math.max(0, parseFloat(newTargetDailyRate) || 15.0);
+    const plannedProfit = Math.max(0, parseFloat(newPlannedDailyProfit) || 1280);
+
+    const safeBaseId = newAccountName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const newId = `${safeBaseId}-${Date.now().toString().slice(-4)}`;
+
     const newAccObj = {
       id: newId,
       name: newAccountName.trim(),
       type: newAccountType,
       icon: newAccountType === 'Agricultural Yield' ? 'sprout' : newAccountType === 'Grid / Gadget Bot' ? 'cpu' : 'building',
     };
+
+    // Build initial cash flows
+    const initialCashFlows: CashFlowItem[] = [
+      {
+        id: `cf-${newId}-deposit`,
+        date: new Date().toISOString().split('T')[0],
+        type: 'Deposit',
+        amount: startCap,
+        asset: 'USDT',
+        notes: 'Initial principal funding',
+      },
+    ];
+
+    if (gasFeeVal > 0) {
+      initialCashFlows.push({
+        id: `cf-${newId}-gas`,
+        date: new Date().toISOString().split('T')[0],
+        type: 'Gas',
+        amount: -gasFeeVal,
+        asset: 'USDT',
+        notes: 'Initial UGas / transaction fees',
+      });
+    }
+
+    if (tradeLossVal > 0) {
+      initialCashFlows.push({
+        id: `cf-${newId}-tradeloss`,
+        date: new Date().toISOString().split('T')[0],
+        type: 'Trade Loss',
+        amount: -tradeLossVal,
+        asset: 'USDT',
+        notes: 'Initial realized trading deficit / money in question',
+      });
+    }
+
+    // Build initial daily log rows
+    const templateRows: DailyLogRow[] = accountData.dailyLog.map((r, idx) => {
+      if (idx === 0) {
+        return {
+          ...r,
+          tradeLoss: -tradeLossVal,
+          ugasFee: -gasFeeVal,
+          dailyReturn: combinedInitialLoss,
+          startingCapital: startCap,
+          endingCapital: startCap + combinedInitialLoss,
+          runningCapital: startCap + combinedInitialLoss,
+          cumulativePnL: combinedInitialLoss,
+          dailyReturnPct: startCap > 0 ? (combinedInitialLoss / startCap) * 100 : 0,
+          ratePct: targetRate,
+          notes:
+            tradeLossVal > 0 || gasFeeVal > 0
+              ? `Initial one-off deficit: Trade -$${tradeLossVal.toLocaleString()} & UGas -$${gasFeeVal.toLocaleString()}`
+              : 'Day 1 baseline entry',
+        };
+      }
+      return {
+        ...r,
+        dailyReturn: idx <= 14 ? plannedProfit : 0,
+        ratePct: targetRate,
+        notes: idx <= 14 ? `Planned target profit ($${plannedProfit.toLocaleString()})` : '',
+      };
+    });
+
+    const recalculatedRows = recalculateDailyLog(templateRows, startCap, targetRate);
 
     const newProfile: AccountData = {
       id: newId,
@@ -467,45 +771,43 @@ export function FarmlandSheetView({
       type: newAccountType as any,
       themeColor: '#3b82f6',
       assumptions: {
-        startingCapital: 5000,
-        targetDailyRatePct: 15.0,
-        plannedDailyProfit: 1280,
+        startingCapital: startCap,
+        targetDailyRatePct: targetRate,
+        plannedDailyProfit: plannedProfit,
         targetCapital: 50000,
       },
       oneOffLosses: {
-        tradeLoss: -2000,
-        ugasFee: -500,
-        combinedDailyReturn: -2500,
+        tradeLoss: -tradeLossVal,
+        ugasFee: -gasFeeVal,
+        combinedDailyReturn: combinedInitialLoss,
       },
-      dailyLog: recalculateDailyLog(
-        accountData.dailyLog.map((r, idx) =>
-          idx === 0
-            ? { ...r, dailyReturn: -2500, tradeLoss: -2000, ugasFee: -500 }
-            : { ...r, dailyReturn: idx <= 14 ? 1280 : 0 }
-        ),
-        5000,
-        15
-      ),
-      cashFlows: [
-        {
-          id: `cf-${newId}-1`,
-          date: new Date().toISOString().split('T')[0],
-          type: 'Deposit',
-          amount: 5000,
-          asset: 'USDT',
-          notes: 'Initial principal funding',
-        },
-      ],
+      dailyLog: recalculatedRows,
+      cashFlows: initialCashFlows,
     };
 
-    setAccounts((prev) => [...prev, newAccObj]);
+    const updatedAccounts = [...accounts, newAccObj];
+    setAccounts(updatedAccounts);
     try {
+      localStorage.setItem('greenharvest_accounts_list_v2', JSON.stringify(updatedAccounts));
+      localStorage.setItem(`greenharvest_account_data_${newId}_v3`, JSON.stringify(newProfile));
       localStorage.setItem(`greenharvest_account_data_${newId}_v2`, JSON.stringify(newProfile));
     } catch (e) {
       console.warn(e);
     }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('greenharvest_accounts_updated', {
+          detail: { accountId: newId, name: newAccountName.trim() },
+        })
+      );
+    }
+
     setNewAccountModalOpen(false);
     setNewAccountName('');
+    setNewStartingCapital('5000');
+    setNewTradeLoss('2000');
+    setNewGasFee('500');
     handleSwitchAccount(newId);
   };
 
@@ -605,41 +907,75 @@ export function FarmlandSheetView({
                   {accounts.map((acc) => {
                     const isSelected = acc.id === accountData.id;
                     return (
-                      <button
+                      <div
                         key={acc.id}
-                        id={`select-account-${acc.id}`}
-                        onClick={() => handleSwitchAccount(acc.id)}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left text-xs transition-colors cursor-pointer ${
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-xs transition-colors group ${
                           isSelected
-                            ? 'bg-slate-800/90 text-white font-bold'
+                            ? 'bg-slate-800 text-white font-bold'
                             : 'text-slate-300 hover:bg-slate-900 hover:text-white'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-6 h-6 rounded-md flex items-center justify-center ${isSelected ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                        <button
+                          id={`select-account-${acc.id}`}
+                          onClick={() => {
+                            handleSwitchAccount(acc.id);
+                            setIsDropdownOpen(false);
+                          }}
+                          className="flex items-center gap-2.5 flex-1 cursor-pointer text-left overflow-hidden pr-2"
+                        >
+                          <div className={`w-6 h-6 shrink-0 rounded-md flex items-center justify-center ${isSelected ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
                             {getAccountIcon(acc.type, acc.id)}
                           </div>
-                          <div>
-                            <div className="font-semibold text-white">{acc.name}</div>
-                            <div className="text-[10px] text-slate-400">{acc.type}</div>
+                          <div className="truncate">
+                            <div className="font-semibold text-white truncate">{acc.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{acc.type}</div>
                           </div>
+                        </button>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Rename Account Pencil Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsDropdownOpen(false);
+                              setRenameTargetId(acc.id);
+                              setRenameTargetName(acc.name);
+                              setRenameModalOpen(true);
+                            }}
+                            className="p-1 rounded-md text-slate-400 hover:text-amber-300 hover:bg-slate-700/60 transition-colors cursor-pointer"
+                            title={`Rename ${acc.name}`}
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          {isSelected && <Check className="w-4 h-4 text-emerald-400" />}
                         </div>
-                        {isSelected && <Check className="w-4 h-4 text-emerald-400" />}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
 
-                <div className="p-2 bg-slate-900/60">
+                <div className="p-2 bg-slate-900/60 space-y-1.5">
                   <button
                     onClick={() => {
                       setIsDropdownOpen(false);
                       setNewAccountModalOpen(true);
                     }}
-                    className="w-full py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="w-full py-1.5 px-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>+ Add Another Account</span>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Add New Account (With Gas & Capital)</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsDropdownOpen(false);
+                      setIsSettingsModalOpen(true);
+                    }}
+                    className="w-full py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Account Assumptions (Yellow Cells)</span>
                   </button>
                 </div>
               </div>
@@ -663,6 +999,15 @@ export function FarmlandSheetView({
 
         {/* Right Action buttons */}
         <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+          <button
+            id="account-bar-settings-btn"
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-400/15 hover:bg-amber-400 text-amber-300 hover:text-slate-950 border border-amber-400/40 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+            title="Edit Starting Capital, Target Daily Rate & Planned Profit"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Account Settings</span>
+          </button>
           <button
             onClick={handleExportCsv}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -742,13 +1087,15 @@ export function FarmlandSheetView({
           onClick={() => setActiveSubTab('assumptions')}
           className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeSubTab === 'assumptions'
-              ? 'bg-slate-800 text-emerald-400 shadow-sm border border-slate-700'
+              ? 'bg-slate-800 text-amber-300 shadow-sm border border-amber-400/50 ring-1 ring-amber-400/30'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
           }`}
         >
-          <Sliders className="w-4 h-4" />
+          <Sliders className="w-4 h-4 text-amber-400" />
           <span>4. Assumptions</span>
-          <span className="text-[10px] font-mono opacity-70">$5,000 / 15%</span>
+          <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-400/20 text-amber-300 font-mono font-bold border border-amber-400/40">
+            🟡 Yellow Cells (Editable)
+          </span>
         </button>
 
         <button
@@ -887,6 +1234,320 @@ export function FarmlandSheetView({
             </div>
           </div>
 
+          {/* ========================================================= */}
+          {/* EXECUTIVE OPERATING ASSUMPTIONS (YELLOW INPUT CELLS) */}
+          {/* Direct, instantaneous editing right on the Dashboard tab */}
+          {/* ========================================================= */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-amber-950/20 via-slate-900 to-slate-950 border-2 border-amber-400/60 shadow-xl shadow-amber-950/20 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-500/20">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-400/20 text-amber-300 border border-amber-400/50 font-mono tracking-wider flex items-center gap-1.5 shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    Yellow Cells • Editable Drivers
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
+                    Dynamic Financial Drivers
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
+                  <span>Operating Assumptions for {accountData.name}</span>
+                </h3>
+                <p className="text-xs text-amber-200/80">
+                  Yellow cells are user-adjustable drivers. Changing any value below immediately updates starting capital, recovery velocity, and all 734 schedule days.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleApplyPlannedProfitToEmptyDays}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-slate-950 border border-amber-400/40 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                  title="Fill next 14 days with the planned daily profit"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Apply Profit to Schedule</span>
+                </button>
+                <button
+                  onClick={() => setActiveSubTab('assumptions')}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Open full Assumptions & Recovery page"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Tab 4 ↗</span>
+                </button>
+              </div>
+            </div>
+
+            {/* REAL-TIME NOTIFICATION ON VALUE CHANGE */}
+            {assumptionsSavedAlert && (
+              <div className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs font-mono flex items-center gap-2 animate-in fade-in duration-200">
+                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="font-semibold">
+                  Recalculation Complete: Starting Capital, Recovery Pace & 2-Year Balances Synchronized in Real-Time!
+                </span>
+              </div>
+            )}
+
+            {/* 4 LUXURY DRIVER CARDS WITH INLINE INPUTS & STEPPERS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: Starting Capital ($5,000) */}
+              <div className="p-4 rounded-xl bg-slate-950/90 border-2 border-amber-400/70 shadow-sm space-y-2.5 hover:border-amber-400 transition-colors">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-amber-300 flex items-center gap-1.5">
+                    <span>Starting Capital</span>
+                    <span className="text-[10px] text-amber-400/80 font-mono">($)</span>
+                  </span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-bold">
+                    Row 0 Day 1
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-2.5 text-base font-bold text-amber-400 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="100"
+                      value={startingCapStr}
+                      onChange={(e) => handleTypeAssumption('startingCapital', e.target.value, setStartingCapStr)}
+                      className="w-full pl-7 pr-3 py-2 bg-amber-950/30 border-2 border-amber-400/80 rounded-lg text-lg font-black font-mono text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-300 transition-all shadow-inner"
+                      placeholder="5000"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('startingCapital', 500)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Add $500"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('startingCapital', -500)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Subtract $500"
+                    >
+                      -
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex items-center gap-1 text-[10px] font-mono">
+                  <span className="text-slate-500">Presets:</span>
+                  {[1000, 5000, 10000, 25000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyPreset('startingCapital', val)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        accountData.assumptions.startingCapital === val
+                          ? 'bg-amber-400 text-slate-950 font-bold border-amber-400'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-amber-300 hover:border-slate-700'
+                      }`}
+                    >
+                      ${val >= 1000 ? `${val / 1000}k` : val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Card 2: Target Daily Rate (15%) */}
+              <div className="p-4 rounded-xl bg-slate-950/90 border-2 border-amber-400/70 shadow-sm space-y-2.5 hover:border-amber-400 transition-colors">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-amber-300 flex items-center gap-1.5">
+                    <span>Target Daily Rate</span>
+                    <span className="text-[10px] text-amber-400/80 font-mono">(%)</span>
+                  </span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-bold">
+                    Target Yield
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={targetRateStr}
+                      onChange={(e) => handleTypeAssumption('targetDailyRatePct', e.target.value, setTargetRateStr)}
+                      className="w-full pl-3 pr-7 py-2 bg-amber-950/30 border-2 border-amber-400/80 rounded-lg text-lg font-black font-mono text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-300 transition-all shadow-inner"
+                      placeholder="15"
+                    />
+                    <span className="absolute right-3 top-2.5 text-base font-bold text-amber-400 font-mono">%</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('targetDailyRatePct', 1)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Add 1%"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('targetDailyRatePct', -1)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Subtract 1%"
+                    >
+                      -
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex items-center gap-1 text-[10px] font-mono">
+                  <span className="text-slate-500">Presets:</span>
+                  {[5, 10, 15, 20].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyPreset('targetDailyRatePct', val)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        accountData.assumptions.targetDailyRatePct === val
+                          ? 'bg-amber-400 text-slate-950 font-bold border-amber-400'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-amber-300 hover:border-slate-700'
+                      }`}
+                    >
+                      {val}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Card 3: Planned Daily Profit ($1,280) */}
+              <div className="p-4 rounded-xl bg-slate-950/90 border-2 border-amber-400/70 shadow-sm space-y-2.5 hover:border-amber-400 transition-colors">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-amber-300 flex items-center gap-1.5">
+                    <span>Planned Daily Profit</span>
+                    <span className="text-[10px] text-amber-400/80 font-mono">($)</span>
+                  </span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-bold">
+                    Recovery Driver
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-2.5 text-base font-bold text-amber-400 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="50"
+                      value={dailyProfitStr}
+                      onChange={(e) => handleTypeAssumption('plannedDailyProfit', e.target.value, setDailyProfitStr)}
+                      className="w-full pl-7 pr-3 py-2 bg-amber-950/30 border-2 border-amber-400/80 rounded-lg text-lg font-black font-mono text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-300 transition-all shadow-inner"
+                      placeholder="1280"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('plannedDailyProfit', 100)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Add $100"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('plannedDailyProfit', -100)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Subtract $100"
+                    >
+                      -
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex items-center gap-1 text-[10px] font-mono">
+                  <span className="text-slate-500">Presets:</span>
+                  {[500, 1000, 1280, 2500].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyPreset('plannedDailyProfit', val)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        accountData.assumptions.plannedDailyProfit === val
+                          ? 'bg-amber-400 text-slate-950 font-bold border-amber-400'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-amber-300 hover:border-slate-700'
+                      }`}
+                    >
+                      ${val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Card 4: Target Operating Capital ($50,000) */}
+              <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 shadow-sm space-y-2.5 hover:border-slate-700 transition-colors">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-slate-300 flex items-center gap-1.5">
+                    <span>Target Portfolio Capital</span>
+                    <span className="text-[10px] text-slate-500 font-mono">($)</span>
+                  </span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                    2-Year Goal
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-2.5 text-base font-bold text-slate-400 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="5000"
+                      value={targetCapStr}
+                      onChange={(e) => handleTypeAssumption('targetCapital', e.target.value, setTargetCapStr)}
+                      className="w-full pl-7 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-lg font-bold font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                      placeholder="50000"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('targetCapital', 5000)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Add $5,000"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('targetCapital', -5000)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Subtract $5,000"
+                    >
+                      -
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex items-center gap-1 text-[10px] font-mono">
+                  <span className="text-slate-500">Presets:</span>
+                  {[25000, 50000, 100000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyPreset('targetCapital', val)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        accountData.assumptions.targetCapital === val
+                          ? 'bg-slate-700 text-white font-bold border-slate-600'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+                      }`}
+                    >
+                      ${val / 1000}k
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* ORIGINAL ONE-OFF LOSSES CARDS (Trade -$2,545 + UGas -$1,175 for Farmland) */}
           <div className="p-5 rounded-2xl bg-fuchsia-950/20 border border-fuchsia-500/30 space-y-4">
             <div className="flex items-center justify-between">
@@ -899,7 +1560,7 @@ export function FarmlandSheetView({
                 </h3>
               </div>
               <span className="text-xs text-fuchsia-300 font-mono font-semibold">
-                First Day (5/1/2025) Total Deduction: -${Math.abs(accountData.oneOffLosses.combinedDailyReturn).toLocaleString()}
+                First Day (2026/01/01) Total Deduction: -${Math.abs(accountData.oneOffLosses.combinedDailyReturn).toLocaleString()}
               </span>
             </div>
 
@@ -916,14 +1577,9 @@ export function FarmlandSheetView({
                   </span>
                   <input
                     type="number"
-                    value={accountData.oneOffLosses.tradeLoss}
-                    onChange={(e) =>
-                      handleUpdateOneOffLosses(
-                        parseFloat(e.target.value) || 0,
-                        accountData.oneOffLosses.ugasFee
-                      )
-                    }
-                    className="w-24 px-2 py-1 bg-slate-950 border border-fuchsia-500/50 rounded text-xs font-mono text-fuchsia-200 text-right focus:outline-none"
+                    value={tradeLossStr}
+                    onChange={(e) => handleTypeTradeLoss(e.target.value)}
+                    className="w-24 px-2 py-1 bg-slate-950 border border-fuchsia-500/50 rounded text-xs font-mono text-fuchsia-200 text-right focus:outline-none focus:ring-1 focus:ring-fuchsia-400"
                     title="Change trade loss"
                   />
                 </div>
@@ -942,14 +1598,9 @@ export function FarmlandSheetView({
                   </span>
                   <input
                     type="number"
-                    value={accountData.oneOffLosses.ugasFee}
-                    onChange={(e) =>
-                      handleUpdateOneOffLosses(
-                        accountData.oneOffLosses.tradeLoss,
-                        parseFloat(e.target.value) || 0
-                      )
-                    }
-                    className="w-24 px-2 py-1 bg-slate-950 border border-fuchsia-500/50 rounded text-xs font-mono text-fuchsia-200 text-right focus:outline-none"
+                    value={ugasFeeStr}
+                    onChange={(e) => handleTypeUgasFee(e.target.value)}
+                    className="w-24 px-2 py-1 bg-slate-950 border border-fuchsia-500/50 rounded text-xs font-mono text-fuchsia-200 text-right focus:outline-none focus:ring-1 focus:ring-fuchsia-400"
                     title="Change UGas fee"
                   />
                 </div>
@@ -984,14 +1635,37 @@ export function FarmlandSheetView({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
-                <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center font-mono">
-                  1
+              {/* STEP 1: Interactive Assumptions Review & Edit */}
+              <div
+                onClick={() => setActiveSubTab('assumptions')}
+                className="p-4 rounded-xl bg-gradient-to-br from-amber-950/30 via-slate-950 to-slate-900 border-2 border-amber-400/60 hover:border-amber-400 shadow-md shadow-amber-950/20 cursor-pointer transition-all duration-200 group space-y-2 relative overflow-hidden"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-6 h-6 rounded-full bg-amber-400/20 text-amber-300 font-bold flex items-center justify-center font-mono text-xs border border-amber-400/40">
+                    1
+                  </div>
+                  <span className="text-[9px] font-mono font-bold text-amber-300 uppercase px-1.5 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors">
+                    Click to Edit ✎
+                  </span>
                 </div>
-                <div className="font-bold text-white text-sm">Open Assumptions</div>
-                <p className="text-slate-300 leading-relaxed">
-                  Go to <strong className="text-yellow-300">4. Assumptions</strong> to review or change the yellow cells: Starting Capital ($5,000), Target Daily Rate (15%), or Planned Daily Profit ($1,280).
+                <div className="font-bold text-white text-sm group-hover:text-amber-300 transition-colors">
+                  Review & Edit Yellow Cells
+                </div>
+                <p className="text-slate-300 leading-relaxed text-xs">
+                  Change the yellow cells: <strong className="text-amber-300">Starting Capital (${accountData.assumptions.startingCapital.toLocaleString()})</strong>, <strong className="text-amber-300">Target Daily Rate ({accountData.assumptions.targetDailyRatePct}%)</strong>, or <strong className="text-amber-300">Planned Daily Profit (${accountData.assumptions.plannedDailyProfit.toLocaleString()})</strong>.
                 </p>
+                <div className="pt-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveSubTab('assumptions');
+                    }}
+                    className="w-full py-1.5 px-3 rounded-lg text-xs font-bold bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-slate-950 border border-amber-400/50 flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>Open Assumptions Editor</span>
+                  </button>
+                </div>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
@@ -1179,7 +1853,7 @@ export function FarmlandSheetView({
                 <tbody className="divide-y divide-slate-800/80 font-mono">
                   {paginatedDailyLog.map((row, idx) => {
                     const isEditing = editingRowId === row.id;
-                    const isDayOne = row.day === '5/1/2025' || (dailyLogPage === 1 && idx === 0);
+                    const isDayOne = row.day === '2026/01/01' || (dailyLogPage === 1 && idx === 0);
                     const isPrefilledProfit = row.dailyReturn > 0;
 
                     if (isEditing) {
@@ -1248,7 +1922,11 @@ export function FarmlandSheetView({
                       >
                         {/* DATE */}
                         <td className="py-2.5 px-3.5 font-semibold text-slate-200 whitespace-nowrap">
-                          {row.day}
+                          {row.day ? (
+                            <span>{row.day}</span>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">—</span>
+                          )}
                           {isDayOne && (
                             <span className="ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30">
                               Loss Day
@@ -1583,128 +2261,321 @@ export function FarmlandSheetView({
       {/* ========================================================= */}
       {activeSubTab === 'assumptions' && (
         <div className="space-y-6">
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
+          <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-950 border border-slate-800 shadow-xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
               <div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 font-mono">
-                  Configurable Yellow Input Cells
-                </span>
-                <h3 className="text-lg font-bold text-white mt-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-400/20 text-amber-300 border border-amber-400/50 font-mono tracking-wider flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    Configurable Yellow Input Cells
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+                    Financial Model Drivers
+                  </span>
+                </div>
+                <h3 className="text-xl font-black text-white mt-1">
                   Operating Assumptions for {accountData.name}
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Change any yellow cell below to immediately recalculate the daily tracker, recovery milestones, and target capital schedule.
+                <p className="text-xs text-amber-200/80 mt-0.5">
+                  Change any yellow cell below to immediately recalculate the daily tracker, recovery milestones, and 734-day capital schedule.
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  handleUpdateAssumptions('startingCapital', 5000);
-                  handleUpdateAssumptions('targetDailyRatePct', 15.0);
-                  handleUpdateAssumptions('plannedDailyProfit', 1280);
-                  handleUpdateAssumptions('targetCapital', 50000);
-                }}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset Assumptions</span>
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleApplyPlannedProfitToEmptyDays}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-slate-950 border border-amber-400/40 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                  title="Apply planned daily profit across schedule"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Apply Profit to Schedule</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleApplyPreset('startingCapital', 5000);
+                    handleApplyPreset('targetDailyRatePct', 15.0);
+                    handleApplyPreset('plannedDailyProfit', 1280);
+                    handleApplyPreset('targetCapital', 50000);
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Reset to 5000 / 15% / 1280 defaults"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Defaults</span>
+                </button>
+              </div>
             </div>
+
+            {/* REAL-TIME NOTIFICATION ON VALUE CHANGE */}
+            {assumptionsSavedAlert && (
+              <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs font-mono flex items-center gap-2 animate-in fade-in duration-200">
+                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="font-semibold">
+                  Recalculation Complete: Starting Capital, Recovery Pace & 2-Year Balances Synchronized in Real-Time!
+                </span>
+              </div>
+            )}
 
             {/* YELLOW CELLS GRID */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Yellow Cell 1: Starting Capital ($5,000) */}
-              <div className="p-4 rounded-xl bg-yellow-950/20 border-2 border-yellow-400/80 shadow-sm space-y-2">
-                <div className="text-xs font-bold text-yellow-300 flex items-center justify-between">
-                  <span>Starting Capital ($)</span>
-                  <span className="text-[10px] font-mono bg-yellow-400/20 px-1.5 py-0.2 rounded text-yellow-200">
+              <div className="p-5 rounded-2xl bg-slate-950/90 border-2 border-amber-400/80 shadow-lg shadow-amber-950/20 space-y-3 hover:border-amber-400 transition-colors">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-amber-300 flex items-center gap-1.5">
+                    <span>Starting Capital ($)</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-amber-400/20 px-2 py-0.5 rounded text-amber-200 font-bold border border-amber-400/30">
                     Yellow Cell
                   </span>
                 </div>
+
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-yellow-400 font-mono">$</span>
-                  <input
-                    type="number"
-                    step="100"
-                    value={accountData.assumptions.startingCapital}
-                    onChange={(e) =>
-                      handleUpdateAssumptions('startingCapital', parseFloat(e.target.value) || 0)
-                    }
-                    className="w-full px-3 py-2 bg-yellow-950/40 border border-yellow-400 rounded-lg text-xl font-bold font-mono text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                  />
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-2.5 text-lg font-bold text-amber-400 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="100"
+                      value={startingCapStr}
+                      onChange={(e) => handleTypeAssumption('startingCapital', e.target.value, setStartingCapStr)}
+                      className="w-full pl-8 pr-3 py-2 bg-amber-950/30 border-2 border-amber-400/80 rounded-xl text-2xl font-black font-mono text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-300 transition-all shadow-inner"
+                      placeholder="5000"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('startingCapital', 500)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Add $500"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('startingCapital', -500)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Subtract $500"
+                    >
+                      -
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-yellow-200/80">
-                  Initial principal allocation per trading lot (default: $5,000.00).
+
+                <div className="flex items-center gap-1 text-[10px] font-mono">
+                  <span className="text-slate-500">Presets:</span>
+                  {[1000, 5000, 10000, 25000, 50000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyPreset('startingCapital', val)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        accountData.assumptions.startingCapital === val
+                          ? 'bg-amber-400 text-slate-950 font-bold border-amber-400'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-amber-300 hover:border-slate-700'
+                      }`}
+                    >
+                      ${val >= 1000 ? `${val / 1000}k` : val}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-amber-200/80">
+                  Initial principal allocation per trading lot (Row 0 Day 1).
                 </p>
               </div>
 
               {/* Yellow Cell 2: Target Daily Rate (15%) */}
-              <div className="p-4 rounded-xl bg-yellow-950/20 border-2 border-yellow-400/80 shadow-sm space-y-2">
-                <div className="text-xs font-bold text-yellow-300 flex items-center justify-between">
-                  <span>Target Daily Rate (%)</span>
-                  <span className="text-[10px] font-mono bg-yellow-400/20 px-1.5 py-0.2 rounded text-yellow-200">
+              <div className="p-5 rounded-2xl bg-slate-950/90 border-2 border-amber-400/80 shadow-lg shadow-amber-950/20 space-y-3 hover:border-amber-400 transition-colors">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-amber-300 flex items-center gap-1.5">
+                    <span>Target Daily Rate (%)</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-amber-400/20 px-2 py-0.5 rounded text-amber-200 font-bold border border-amber-400/30">
                     Yellow Cell
                   </span>
                 </div>
+
                 <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={accountData.assumptions.targetDailyRatePct}
-                    onChange={(e) =>
-                      handleUpdateAssumptions('targetDailyRatePct', parseFloat(e.target.value) || 0)
-                    }
-                    className="w-full px-3 py-2 bg-yellow-950/40 border border-yellow-400 rounded-lg text-xl font-bold font-mono text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                  />
-                  <span className="text-lg font-bold text-yellow-400 font-mono">%</span>
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={targetRateStr}
+                      onChange={(e) => handleTypeAssumption('targetDailyRatePct', e.target.value, setTargetRateStr)}
+                      className="w-full pl-3 pr-8 py-2 bg-amber-950/30 border-2 border-amber-400/80 rounded-xl text-2xl font-black font-mono text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-300 transition-all shadow-inner"
+                      placeholder="15"
+                    />
+                    <span className="absolute right-3 top-2.5 text-lg font-bold text-amber-400 font-mono">%</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('targetDailyRatePct', 1)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Add 1%"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('targetDailyRatePct', -1)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Subtract 1%"
+                    >
+                      -
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-yellow-200/80">
+
+                <div className="flex items-center gap-1 text-[10px] font-mono">
+                  <span className="text-slate-500">Presets:</span>
+                  {[5, 10, 15, 20, 25].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyPreset('targetDailyRatePct', val)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        accountData.assumptions.targetDailyRatePct === val
+                          ? 'bg-amber-400 text-slate-950 font-bold border-amber-400'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-amber-300 hover:border-slate-700'
+                      }`}
+                    >
+                      {val}%
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-amber-200/80">
                   Bot strategy target yield rate per daily operational cycle.
                 </p>
               </div>
 
               {/* Yellow Cell 3: Planned Daily Profit ($1,280) */}
-              <div className="p-4 rounded-xl bg-yellow-950/20 border-2 border-yellow-400/80 shadow-sm space-y-2">
-                <div className="text-xs font-bold text-yellow-300 flex items-center justify-between">
-                  <span>Planned Daily Profit ($)</span>
-                  <span className="text-[10px] font-mono bg-yellow-400/20 px-1.5 py-0.2 rounded text-yellow-200">
+              <div className="p-5 rounded-2xl bg-slate-950/90 border-2 border-amber-400/80 shadow-lg shadow-amber-950/20 space-y-3 hover:border-amber-400 transition-colors">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-amber-300 flex items-center gap-1.5">
+                    <span>Planned Daily Profit ($)</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-amber-400/20 px-2 py-0.5 rounded text-amber-200 font-bold border border-amber-400/30">
                     Yellow Cell
                   </span>
                 </div>
+
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-yellow-400 font-mono">$</span>
-                  <input
-                    type="number"
-                    step="10"
-                    value={accountData.assumptions.plannedDailyProfit}
-                    onChange={(e) =>
-                      handleUpdateAssumptions('plannedDailyProfit', parseFloat(e.target.value) || 0)
-                    }
-                    className="w-full px-3 py-2 bg-yellow-950/40 border border-yellow-400 rounded-lg text-xl font-bold font-mono text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                  />
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-2.5 text-lg font-bold text-amber-400 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="50"
+                      value={dailyProfitStr}
+                      onChange={(e) => handleTypeAssumption('plannedDailyProfit', e.target.value, setDailyProfitStr)}
+                      className="w-full pl-8 pr-3 py-2 bg-amber-950/30 border-2 border-amber-400/80 rounded-xl text-2xl font-black font-mono text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-300 transition-all shadow-inner"
+                      placeholder="1280"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('plannedDailyProfit', 100)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Add $100"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('plannedDailyProfit', -100)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Subtract $100"
+                    >
+                      -
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-yellow-200/80">
-                  Example $1,280 daily profit target pre-filled for 14 sample days.
+
+                <div className="flex items-center gap-1 text-[10px] font-mono">
+                  <span className="text-slate-500">Presets:</span>
+                  {[500, 1000, 1280, 2000, 2500].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyPreset('plannedDailyProfit', val)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        accountData.assumptions.plannedDailyProfit === val
+                          ? 'bg-amber-400 text-slate-950 font-bold border-amber-400'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-amber-300 hover:border-slate-700'
+                      }`}
+                    >
+                      ${val}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-amber-200/80">
+                  Target daily profit benchmark for recovery velocity calculations.
                 </p>
               </div>
 
               {/* Target Operating Capital Baseline ($50,000) */}
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 shadow-sm space-y-2">
-                <div className="text-xs font-bold text-slate-300 flex items-center justify-between">
+              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-sm space-y-3 hover:border-slate-700 transition-colors">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-300">
                   <span>Target Operating Capital ($)</span>
-                  <span className="text-[10px] font-mono text-slate-500">2-Year Goal</span>
+                  <span className="text-[10px] font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded">
+                    2-Year Goal
+                  </span>
                 </div>
+
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-slate-400 font-mono">$</span>
-                  <input
-                    type="number"
-                    step="1000"
-                    value={accountData.assumptions.targetCapital}
-                    onChange={(e) =>
-                      handleUpdateAssumptions('targetCapital', parseFloat(e.target.value) || 0)
-                    }
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xl font-bold font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-2.5 text-lg font-bold text-slate-400 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="5000"
+                      value={targetCapStr}
+                      onChange={(e) => handleTypeAssumption('targetCapital', e.target.value, setTargetCapStr)}
+                      className="w-full pl-8 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-2xl font-bold font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                      placeholder="50000"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('targetCapital', 5000)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Add $5,000"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStepAssumption('targetCapital', -5000)}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Subtract $5,000"
+                    >
+                      -
+                    </button>
+                  </div>
                 </div>
+
+                <div className="flex items-center gap-1 text-[10px] font-mono">
+                  <span className="text-slate-500">Presets:</span>
+                  {[25000, 50000, 100000, 250000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyPreset('targetCapital', val)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        accountData.assumptions.targetCapital === val
+                          ? 'bg-slate-700 text-white font-bold border-slate-600'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+                      }`}
+                    >
+                      ${val / 1000}k
+                    </button>
+                  ))}
+                </div>
+
                 <p className="text-[11px] text-slate-400">
                   The $50,000 cumulative portfolio capital baseline to reach.
                 </p>
@@ -1770,7 +2641,7 @@ export function FarmlandSheetView({
                   {accountData.name.toUpperCase()}
                 </span>
                 <span className="text-xs bg-emerald-800/80 px-2 py-0.5 rounded font-mono">
-                  734 Recorded Days (5/1/2025 – 5/4/2027)
+                  734 Recorded Days (Starting 2026/01/01)
                 </span>
               </div>
               <div className="flex items-center gap-2 text-xs font-mono">
@@ -1814,7 +2685,13 @@ export function FarmlandSheetView({
                     const hasDeduction = row.dailyReturn !== 0;
                     return (
                       <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-2.5 px-4 font-semibold text-slate-200">{row.day}</td>
+                        <td className="py-2.5 px-4 font-semibold text-slate-200">
+                          {row.day ? (
+                            <span>{row.day}</span>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">—</span>
+                          )}
+                        </td>
                         <td className="py-2.5 px-4 text-slate-300">
                           ${accountData.assumptions.startingCapital.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
@@ -1935,73 +2812,63 @@ export function FarmlandSheetView({
         </div>
       )}
 
-      {/* CREATE NEW ACCOUNT MODAL */}
-      {newAccountModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Plus className="w-5 h-5 text-emerald-400" />
-                Add New Trading Account
-              </h3>
-              <button
-                onClick={() => setNewAccountModalOpen(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* ADD ACCOUNT MODAL (With Gas Fees & Money in Question Inputs) */}
+      <AddAccountModal
+        isOpen={newAccountModalOpen}
+        onClose={() => setNewAccountModalOpen(false)}
+        onAccountCreated={(newAcc, newAccData) => {
+          setAccounts(getStoredAccountsList());
+          setAccountData(newAccData);
+          setActiveAccountId(newAcc.id);
+          if (externalSelectAccount) {
+            externalSelectAccount(newAcc.id);
+          }
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('greenharvest_active_account_id_v3', newAcc.id);
+            localStorage.setItem('greenharvest_active_account_id_v2', newAcc.id);
+          }
+        }}
+      />
 
-            <form onSubmit={handleCreateNewAccount} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-300 mb-1 font-semibold">Account Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Firmly or Gadget or Alpha Bot"
-                  value={newAccountName}
-                  onChange={(e) => setNewAccountName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white font-semibold focus:outline-none focus:border-emerald-500"
-                  required
-                />
-              </div>
+      {/* RENAME ACCOUNT MODAL */}
+      <RenameAccountModal
+        isOpen={renameModalOpen}
+        accountId={renameTargetId}
+        currentName={renameTargetName}
+        onClose={() => setRenameModalOpen(false)}
+        onRenamed={(accId, newName) => {
+          setAccounts(getStoredAccountsList());
+          if (accountData.id === accId) {
+            setAccountData((prev) => ({ ...prev, name: newName }));
+          }
+        }}
+      />
 
-              <div>
-                <label className="block text-slate-300 mb-1 font-semibold">Account Strategy Type</label>
-                <select
-                  value={newAccountType}
-                  onChange={(e) => setNewAccountType(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="Firm Arbitrage">Firm Arbitrage</option>
-                  <option value="Grid / Gadget Bot">Grid / Gadget Bot</option>
-                  <option value="Agricultural Yield">Agricultural Yield</option>
-                  <option value="Custom Bot">Custom Bot</option>
-                </select>
-              </div>
-
-              <p className="text-[11px] text-slate-400">
-                Will initialize with its own independent Dashboard, Daily Log, Cash Flows, Assumptions, and 2-Year Schedule.
-              </p>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setNewAccountModalOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                >
-                  Create Account
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Account Operating Settings Modal */}
+      <AccountSettingsModal
+        isOpen={isSettingsModalOpen}
+        accountId={accountData.id}
+        accountName={accountData.name}
+        initialStartingCapital={accountData.assumptions.startingCapital}
+        initialTargetDailyRatePct={accountData.assumptions.targetDailyRatePct}
+        initialPlannedDailyProfit={accountData.assumptions.plannedDailyProfit}
+        initialTargetCapital={accountData.assumptions.targetCapital}
+        onClose={() => setIsSettingsModalOpen(false)}
+        onSave={(data) => {
+          setAccountData((prev) => {
+            const recalculated = recalculateDailyLog(
+              prev.dailyLog,
+              data.assumptions.startingCapital,
+              data.assumptions.targetDailyRatePct
+            );
+            return {
+              ...prev,
+              assumptions: data.assumptions,
+              dailyLog: recalculated,
+            };
+          });
+        }}
+      />
     </div>
   );
 }

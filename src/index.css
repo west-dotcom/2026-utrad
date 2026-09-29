@@ -1,1 +1,174 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =========================================================
+   LIGHT & DARK THEME CUSTOM PALETTE
+   When the user toggles between Light, Dark, or System,
+   adapt root color-scheme, surface cards, text, and borders.
+   ========================================================= */
+
+:root {
+  color-scheme: dark;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.light,
+html:not(.dark) {
+  color-scheme: light;
+}
+
+/* Light Mode Background & Body Text */
+html.light body,
+html:not(.dark) body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* Root Application Wrapper in Light Mode */
+html.light .bg-slate-950,
+html:not(.dark) .bg-slate-950 {
+  background-color: #f8fafc;
+}
+
+html.light .bg-slate-950\/80,
+html:not(.dark) .bg-slate-950\/80 {
+  background-color: rgba(255, 255, 255, 0.9);
+}
+
+html.light .bg-slate-950\/70,
+html:not(.dark) .bg-slate-950\/70 {
+  background-color: rgba(248, 250, 252, 0.85);
+}
+
+html.light .bg-slate-950\/50,
+html:not(.dark) .bg-slate-950\/50 {
+  background-color: rgba(241, 245, 249, 0.75);
+}
+
+/* Surface Cards & Panels in Light Mode */
+html.light .bg-slate-900,
+html:not(.dark) .bg-slate-900 {
+  background-color: #ffffff;
+}
+
+html.light .bg-slate-900\/90,
+html:not(.dark) .bg-slate-900\/90 {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+html.light .bg-slate-900\/80,
+html:not(.dark) .bg-slate-900\/80 {
+  background-color: rgba(255, 255, 255, 0.88);
+}
+
+html.light .bg-slate-900\/70,
+html:not(.dark) .bg-slate-900\/70 {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+/* Sub-containers & secondary rows in Light Mode */
+html.light .bg-slate-800,
+html:not(.dark) .bg-slate-800 {
+  background-color: #f1f5f9;
+}
+
+html.light .bg-slate-800\/80,
+html:not(.dark) .bg-slate-800\/80 {
+  background-color: rgba(241, 245, 249, 0.9);
+}
+
+html.light .bg-slate-800\/70,
+html:not(.dark) .bg-slate-800\/70 {
+  background-color: rgba(241, 245, 249, 0.75);
+}
+
+html.light .bg-slate-800\/50,
+html:not(.dark) .bg-slate-800\/50 {
+  background-color: rgba(241, 245, 249, 0.6);
+}
+
+html.light .bg-slate-800\/40,
+html:not(.dark) .bg-slate-800\/40 {
+  background-color: rgba(241, 245, 249, 0.45);
+}
+
+/* Borders in Light Mode */
+html.light .border-slate-800,
+html:not(.dark) .border-slate-800 {
+  border-color: #e2e8f0;
+}
+
+html.light .border-slate-800\/80,
+html:not(.dark) .border-slate-800\/80 {
+  border-color: rgba(226, 232, 240, 0.85);
+}
+
+html.light .border-slate-700,
+html:not(.dark) .border-slate-700 {
+  border-color: #cbd5e1;
+}
+
+html.light .divide-slate-800\/80 > :not([hidden]) ~ :not([hidden]),
+html:not(.dark) .divide-slate-800\/80 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(226, 232, 240, 0.85);
+}
+
+html.light .divide-slate-800 > :not([hidden]) ~ :not([hidden]),
+html:not(.dark) .divide-slate-800 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0;
+}
+
+/* Text hierarchy in Light Mode */
+html.light .text-slate-100,
+html:not(.dark) .text-slate-100 {
+  color: #0f172a;
+}
+
+html.light .text-slate-200,
+html:not(.dark) .text-slate-200 {
+  color: #1e293b;
+}
+
+html.light .text-slate-300,
+html:not(.dark) .text-slate-300 {
+  color: #334155;
+}
+
+html.light .text-slate-400,
+html:not(.dark) .text-slate-400 {
+  color: #64748b;
+}
+
+/* Headings in Light Mode (keep colored buttons like bg-emerald-600 white) */
+html.light h1.text-white,
+html.light h2.text-white,
+html.light h3.text-white,
+html.light h4.text-white,
+html.light p.text-white,
+html.light div.text-white:not([class*="bg-emerald"]):not([class*="bg-blue"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]) {
+  color: #0f172a;
+}
+
+/* Inputs in Light Mode */
+html.light input:not([type="checkbox"]):not([type="radio"]),
+html.light select,
+html.light textarea {
+  background-color: #ffffff;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94a3b8;
+}
+
+/* Shadows in Light Mode */
+html.light .shadow-sm,
+html:not(.dark) .shadow-sm {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+}

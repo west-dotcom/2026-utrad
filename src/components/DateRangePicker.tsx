@@ -31,8 +31,8 @@ interface DateRangePickerProps {
 export function DateRangePicker({
   currentFilter,
   onChangeFilter,
-  minAvailableDate = '2025-05-01',
-  maxAvailableDate = '2025-07-29',
+  minAvailableDate = '2026-01-01',
+  maxAvailableDate = '2026-12-31',
   totalAvailableDays = 90,
   filteredDaysCount = 30,
   filteredPnL,
@@ -65,34 +65,34 @@ export function DateRangePicker({
 
     setIsCustomOpen(false);
 
-    // Compute start and end dates relative to minAvailableDate (2025-05-01)
-    const baseDate = new Date('2025-05-01T00:00:00');
-    let startDateStr = '2025-05-01';
-    let endDateStr = '2025-05-30';
+    // Compute start and end dates relative to minAvailableDate (2026-01-01)
+    const baseDate = new Date('2026-01-01T00:00:00');
+    let startDateStr = '2026-01-01';
+    let endDateStr = '2026-01-30';
     let label = 'Last 30 Days';
 
     if (preset === '7D') {
       const endD = new Date(baseDate);
-      endD.setDate(baseDate.getDate() + 6); // 7 days (May 1 to May 7)
+      endD.setDate(baseDate.getDate() + 6); // 7 days (Jan 1 to Jan 7)
       endDateStr = formatDate(endD);
-      label = '7 Days (May 1 - May 7, 2025)';
+      label = '7 Days (Jan 1 - Jan 7, 2026)';
     } else if (preset === '30D') {
       const endD = new Date(baseDate);
-      endD.setDate(baseDate.getDate() + 29); // 30 days (May 1 to May 30)
+      endD.setDate(baseDate.getDate() + 29); // 30 days (Jan 1 to Jan 30)
       endDateStr = formatDate(endD);
-      label = '30 Days (May 1 - May 30, 2025)';
+      label = '30 Days (Jan 1 - Jan 30, 2026)';
     } else if (preset === '90D') {
       const endD = new Date(baseDate);
-      endD.setDate(baseDate.getDate() + 89); // 90 days (May 1 to July 29)
+      endD.setDate(baseDate.getDate() + 89); // 90 days (Jan 1 to Mar 31)
       endDateStr = formatDate(endD);
-      label = '90 Days (May 1 - Jul 29, 2025)';
+      label = '90 Days (Jan 1 - Mar 31, 2026)';
     } else if (preset === 'YTD') {
-      startDateStr = '2025-01-01';
-      endDateStr = '2025-12-31';
-      label = 'Year-to-Date 2025';
+      startDateStr = '2026-01-01';
+      endDateStr = '2026-12-31';
+      label = 'Year-to-Date 2026';
     } else if (preset === 'ALL') {
-      startDateStr = '2025-05-01';
-      endDateStr = '2027-05-04';
+      startDateStr = '2026-01-01';
+      endDateStr = '2027-12-31';
       label = 'All Recorded Ledger Days';
     }
 

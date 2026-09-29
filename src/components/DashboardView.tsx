@@ -38,6 +38,8 @@ import {
   calculateAccountMetrics,
   calculateAggregateMetrics,
   AccountMetrics,
+  getStoredAccountsList,
+  AccountMeta,
 } from '../data/accountsData';
 import { DailyProfitLossBarChart } from './DailyProfitLossBarChart';
 import { CalendarRoiHeatmap } from './CalendarRoiHeatmap';
@@ -80,8 +82,18 @@ export function DashboardView({
     }
   }, [isAggregate]);
 
-  // Load all 3 core accounts: Farmland, Firmly, Gadget
-  const accountIds = useMemo(() => ['farmland', 'firmly', 'gadget'], []);
+  // Load all accounts dynamically including any user-added accounts
+  const [accountsList, setAccountsList] = useState<AccountMeta[]>(() => getStoredAccountsList());
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setAccountsList(getStoredAccountsList());
+    };
+    window.addEventListener('greenharvest_accounts_updated', handleUpdate);
+    return () => window.removeEventListener('greenharvest_accounts_updated', handleUpdate);
+  }, []);
+
+  const accountIds = useMemo(() => accountsList.map((a) => a.id), [accountsList]);
 
   const allAccountsData = useMemo(() => {
     return accountIds.map(loadAccountData);
@@ -112,9 +124,9 @@ export function DashboardView({
   // Date Range Filter state for analytical charts (Line chart, Bar chart, Heatmap)
   const [chartDateFilter, setChartDateFilter] = useState<DateRangeFilter>({
     preset: '30D',
-    startDate: '2025-05-01',
-    endDate: '2025-05-30',
-    label: '30 Days (May 1 - May 30, 2025)',
+    startDate: '2026-01-01',
+    endDate: '2026-01-30',
+    label: '30 Days (Jan 1 - Jan 30, 2026)',
   });
 
   // Filter dailyLog by the active date range window
@@ -126,19 +138,32 @@ export function DashboardView({
 
     const filtered = activeMetrics.dailyLog.filter((row) => {
       if (!row.day) return false;
-      let y = 2025;
-      let m = 5;
+      let y = 2026;
+      let m = 1;
       let d = 1;
       if (row.day.includes('/')) {
         const parts = row.day.split('/');
-        m = parseInt(parts[0], 10);
-        d = parseInt(parts[1], 10);
-        y = parseInt(parts[2], 10);
+        // Format could be YYYY/MM/DD or MM/DD/YYYY
+        if (parts[0].length === 4) {
+          y = parseInt(parts[0], 10);
+          m = parseInt(parts[1], 10);
+          d = parseInt(parts[2], 10);
+        } else {
+          m = parseInt(parts[0], 10);
+          d = parseInt(parts[1], 10);
+          y = parseInt(parts[2], 10);
+        }
       } else if (row.day.includes('-')) {
         const parts = row.day.split('-');
-        y = parseInt(parts[0], 10);
-        m = parseInt(parts[1], 10);
-        d = parseInt(parts[2], 10);
+        if (parts[0].length === 4) {
+          y = parseInt(parts[0], 10);
+          m = parseInt(parts[1], 10);
+          d = parseInt(parts[2], 10);
+        } else {
+          m = parseInt(parts[0], 10);
+          d = parseInt(parts[1], 10);
+          y = parseInt(parts[2], 10);
+        }
       }
       const rowDate = new Date(y, m - 1, d);
       return rowDate >= start && rowDate <= end;
@@ -376,26 +401,33 @@ export function DashboardView({
           </div>
 
           {/* Quick Account Switcher Pills */}
-          <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
-            {[
-              { id: 'farmland', label: 'Farmland', icon: Sprout, color: 'text-emerald-400' },
-              { id: 'firmly', label: 'Firmly', icon: Building2, color: 'text-blue-400' },
-              { id: 'gadget', label: 'Gadget', icon: Cpu, color: 'text-purple-400' },
-            ].map((acc) => {
-              const Icon = acc.icon;
+          <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto max-w-full">
+            {accountsList.map((acc) => {
+              const Icon =
+                acc.icon === 'building' || acc.type === 'Firm Arbitrage'
+                  ? Building2
+                  : acc.icon === 'cpu' || acc.type === 'Grid / Gadget Bot'
+                  ? Cpu
+                  : Sprout;
+              const color =
+                acc.icon === 'building' || acc.type === 'Firm Arbitrage'
+                  ? 'text-blue-400'
+                  : acc.icon === 'cpu' || acc.type === 'Grid / Gadget Bot'
+                  ? 'text-purple-400'
+                  : 'text-emerald-400';
               const isSelected = selectedAccountId === acc.id;
               return (
                 <button
                   key={acc.id}
                   onClick={() => onSelectAccount && onSelectAccount(acc.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-slate-800 text-white font-bold border border-slate-700 shadow-xs'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${acc.color}`} />
-                  <span>{acc.label}</span>
+                  <Icon className={`w-3.5 h-3.5 ${color}`} />
+                  <span>{acc.name}</span>
                 </button>
               );
             })}
@@ -410,7 +442,7 @@ export function DashboardView({
                 ∑ Total Aggregate Mode Active
               </span>
               <span className="text-xs text-white font-bold">
-                Summing All 3 Trading Accounts (Farmland + Firmly + Gadget)
+                Summing All {accountsList.length} Trading Accounts ({accountsList.map((a) => a.name).join(' + ')})
               </span>
             </div>
             <span className="text-xs text-emerald-400 font-mono font-bold">
@@ -418,8 +450,8 @@ export function DashboardView({
             </span>
           </div>
 
-          {/* 3 Accounts Comparative Snapshot Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Accounts Comparative Snapshot Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {individualAccountMetrics.map((acc) => {
               const isProfit = acc.cumulativePnL >= 0;
               return (

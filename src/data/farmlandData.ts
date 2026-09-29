@@ -22,28 +22,19 @@ export interface FarmlandSummary {
 }
 
 /**
- * Generates the full 2-year Farmland schedule from 5/1/2025 through 5/4/2027
- * exactly as documented in the user's 26-page spreadsheet.
+ * Generates the Farmland schedule set up to 2026/01/01.
+ * Row 1: 2026/01/01
+ * Subsequent rows: date in cell left empty (""), ready for entry.
  */
 export function generateFarmlandSchedule(): FarmlandRow[] {
   const rows: FarmlandRow[] = [];
-  const startDate = new Date(2025, 4, 1); // May 1, 2025 (month is 0-indexed)
-  const endDate = new Date(2027, 4, 4); // May 4, 2027 (734 days)
 
-  let currentDate = new Date(startDate);
-  let index = 0;
-
-  while (currentDate <= endDate) {
-    const month = currentDate.getMonth() + 1;
-    const day = currentDate.getDate();
-    const year = currentDate.getFullYear();
-    const formattedDay = `${month}/${day}/${year}`;
-
-    // Row 1 (5/1/2025): Has initial trade loss -$2545 and UGas -$1175
+  for (let index = 0; index < 734; index++) {
+    // Row 1 (2026/01/01): Has initial trade loss -$2545 and UGas -$1175
     if (index === 0) {
       rows.push({
         id: `farm-${index}`,
-        day: formattedDay,
+        day: '2026/01/01',
         amount: 5000.0,
         tradeLoss: -2545.0,
         ugasFee: -1175.0,
@@ -53,10 +44,10 @@ export function generateFarmlandSchedule(): FarmlandRow[] {
         notes: 'Initial day allocation; Trade PnL -$2,545 + UGas -$1,175',
       });
     } else {
-      // Subsequent daily rows carry the $1,280.00 total remaining capital and 15% rate
+      // Subsequent daily rows: date in cell left empty
       rows.push({
         id: `farm-${index}`,
-        day: formattedDay,
+        day: '',
         amount: 5000.0,
         tradeLoss: 0,
         ugasFee: 0,
@@ -65,9 +56,6 @@ export function generateFarmlandSchedule(): FarmlandRow[] {
         ratePct: 15.0,
       });
     }
-
-    currentDate.setDate(currentDate.getDate() + 1);
-    index++;
   }
 
   return rows;

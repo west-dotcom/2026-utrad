@@ -164,18 +164,6 @@ export const INITIAL_SAMPLE_TRANSACTIONS: Transaction[] = [
     botId: 'SOL-Funding-Arb',
     notes: 'Positive funding settlement across weekend',
   },
-  // Day 15: Mid-month rebalance and interest
-  {
-    id: 'tx-014',
-    date: '2026-07-15',
-    type: 'Interest',
-    amount: 116.6,
-    asset: 'USDC',
-    sourceDest: 'Bybit -> Lender',
-    gasFee: 3.0,
-    botId: 'Treasury',
-    notes: 'Half-month interest on $20,000 loan facility (7% APR)',
-  },
   {
     id: 'tx-015',
     date: '2026-07-15',
@@ -257,18 +245,6 @@ export const INITIAL_SAMPLE_TRANSACTIONS: Transaction[] = [
     botId: 'BTC-Grid-01',
     notes: 'Heavy volatility session 54 fills',
   },
-  // Day 31: End of Month 1 Interest
-  {
-    id: 'tx-022',
-    date: '2026-07-31',
-    type: 'Interest',
-    amount: 116.6,
-    asset: 'USDC',
-    sourceDest: 'Bybit -> Lender',
-    gasFee: 2.5,
-    botId: 'Treasury',
-    notes: 'Month-end loan interest deduction',
-  },
   // August Data (Month 2)
   {
     id: 'tx-023',
@@ -338,17 +314,6 @@ export const INITIAL_SAMPLE_TRANSACTIONS: Transaction[] = [
     notes: 'Strong weekly close continuation trade',
   },
   {
-    id: 'tx-029',
-    date: '2026-08-15',
-    type: 'Interest',
-    amount: 87.5,
-    asset: 'USDC',
-    sourceDest: 'Bybit -> Lender',
-    gasFee: 2.0,
-    botId: 'Treasury',
-    notes: 'Lower interest following $5k principal repayment',
-  },
-  {
     id: 'tx-030',
     date: '2026-08-18',
     type: 'Trade PnL',
@@ -391,17 +356,6 @@ export const INITIAL_SAMPLE_TRANSACTIONS: Transaction[] = [
     gasFee: 16.4,
     botId: 'BTC-Grid-01',
     notes: 'High volatility grid harvesting 68 executions',
-  },
-  {
-    id: 'tx-034',
-    date: '2026-08-31',
-    type: 'Interest',
-    amount: 87.5,
-    asset: 'USDC',
-    sourceDest: 'Bybit -> Lender',
-    gasFee: 2.0,
-    botId: 'Treasury',
-    notes: 'Month-end loan interest deduction',
   },
   // September Data (Current Month)
   {
@@ -447,17 +401,6 @@ export const INITIAL_SAMPLE_TRANSACTIONS: Transaction[] = [
     gasFee: 10.8,
     botId: 'BTC-Grid-01',
     notes: 'BTC support bounce 35 grid fills',
-  },
-  {
-    id: 'tx-039',
-    date: '2026-09-15',
-    type: 'Interest',
-    amount: 87.5,
-    asset: 'USDC',
-    sourceDest: 'Bybit -> Lender',
-    gasFee: 2.0,
-    botId: 'Treasury',
-    notes: 'Mid-month interest on remaining $15k balance',
   },
   {
     id: 'tx-040',

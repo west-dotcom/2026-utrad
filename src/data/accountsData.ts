@@ -62,9 +62,8 @@ export const INITIAL_ACCOUNTS: { id: string; name: string; type: string; icon: s
 
 /**
  * Generate default daily log for an account.
- * Day 1 has initial loss.
- * Next 14 days pre-filled with the $1,280 planned daily return.
- * Hundreds of extra rows pre-formatted and ready for years of data!
+ * Set up to 2026/01/01 (Row 1).
+ * All subsequent rows leave the date cell empty (""), ready for the user to log entries.
  */
 export function generateDefaultDailyLog(
   startingCapital: number = 5000,
@@ -74,31 +73,22 @@ export function generateDefaultDailyLog(
   initialUGasFee: number = -1175
 ): DailyLogRow[] {
   const rows: DailyLogRow[] = [];
-  const startDate = new Date(2025, 4, 1); // 5/1/2025
   const initialCombinedLoss = initialTradeLoss + initialUGasFee; // e.g. -3720
 
   let currentStartCap = startingCapital;
   let runningCumPnL = 0;
 
-  // Total 734 days (May 1, 2025 to May 4, 2027) matching 2-year template
+  // Total 734 rows ready for records starting at 2026/01/01
   for (let i = 0; i < 734; i++) {
-    const curDate = new Date(startDate);
-    curDate.setDate(startDate.getDate() + i);
-
-    const m = curDate.getMonth() + 1;
-    const d = curDate.getDate();
-    const y = curDate.getFullYear();
-    const formattedDay = `${m}/${d}/${y}`;
-
     if (i === 0) {
-      // Day 1: Original one-off losses
+      // Row 1: Set up to 2026/01/01 with initial allocation
       const dRet = initialCombinedLoss;
       const endCap = currentStartCap + dRet;
       runningCumPnL += dRet;
 
       rows.push({
         id: `row-0`,
-        day: formattedDay,
+        day: '2026/01/01', // Set up to 2026/01/01
         startingCapital: currentStartCap,
         dailyReturn: dRet,
         dailyReturnPct: (dRet / currentStartCap) * 100,
@@ -108,36 +98,15 @@ export function generateDefaultDailyLog(
         ratePct: targetRatePct,
         tradeLoss: initialTradeLoss,
         ugasFee: initialUGasFee,
-        notes: `Initial day one-off loss (Trade PnL: $${initialTradeLoss}, UGas: $${initialUGasFee})`,
-      });
-
-      // Next day starts with day 1 ending capital ($1,280 for farmland)
-      currentStartCap = endCap;
-    } else if (i <= 14) {
-      // Days 2 to 15 (Next 14 days): Pre-filled with planned $1,280 return
-      const dRet = plannedDailyProfit;
-      const endCap = currentStartCap + dRet;
-      runningCumPnL += dRet;
-
-      rows.push({
-        id: `row-${i}`,
-        day: formattedDay,
-        startingCapital: currentStartCap,
-        dailyReturn: dRet,
-        dailyReturnPct: currentStartCap > 0 ? (dRet / currentStartCap) * 100 : 0,
-        endingCapital: endCap,
-        cumulativePnL: runningCumPnL,
-        runningCapital: endCap,
-        ratePct: targetRatePct,
-        notes: `Pre-filled sample profit day #${i}`,
+        notes: `Initial day allocation; Trade PnL: $${initialTradeLoss}, UGas: $${initialUGasFee}`,
       });
 
       currentStartCap = endCap;
     } else {
-      // Pre-formatted empty/ready future days
+      // Subsequent rows: Date in cell is left EMPTY (""), ready for new records
       rows.push({
         id: `row-${i}`,
-        day: formattedDay,
+        day: '', // empty date in cell
         startingCapital: currentStartCap,
         dailyReturn: 0,
         dailyReturnPct: 0,
@@ -162,7 +131,7 @@ export function generateDefaultCashFlows(
     return [
       {
         id: 'cf-firmly-1',
-        date: '2025-05-01',
+        date: '2026-01-01',
         type: 'Deposit',
         amount: 5000,
         asset: 'USDT',
@@ -170,7 +139,7 @@ export function generateDefaultCashFlows(
       },
       {
         id: 'cf-firmly-2',
-        date: '2025-05-01',
+        date: '2026-01-01',
         type: 'Trade Loss',
         amount: -1200,
         asset: 'USDT',
@@ -178,7 +147,7 @@ export function generateDefaultCashFlows(
       },
       {
         id: 'cf-firmly-3',
-        date: '2025-05-01',
+        date: '2026-01-01',
         type: 'Gas',
         amount: -450,
         asset: 'USDT',
@@ -186,7 +155,7 @@ export function generateDefaultCashFlows(
       },
       {
         id: 'cf-firmly-4',
-        date: '2025-05-08',
+        date: '2026-01-08',
         type: 'Loan In',
         amount: 2500,
         asset: 'USDT',
@@ -199,7 +168,7 @@ export function generateDefaultCashFlows(
     return [
       {
         id: 'cf-gadget-1',
-        date: '2025-05-01',
+        date: '2026-01-01',
         type: 'Deposit',
         amount: 5000,
         asset: 'USDT',
@@ -207,7 +176,7 @@ export function generateDefaultCashFlows(
       },
       {
         id: 'cf-gadget-2',
-        date: '2025-05-01',
+        date: '2026-01-01',
         type: 'Trade Loss',
         amount: -1850,
         asset: 'USDT',
@@ -215,7 +184,7 @@ export function generateDefaultCashFlows(
       },
       {
         id: 'cf-gadget-3',
-        date: '2025-05-01',
+        date: '2026-01-01',
         type: 'Gas',
         amount: -620,
         asset: 'USDT',
@@ -223,7 +192,7 @@ export function generateDefaultCashFlows(
       },
       {
         id: 'cf-gadget-4',
-        date: '2025-05-12',
+        date: '2026-01-12',
         type: 'Withdrawal',
         amount: -600,
         asset: 'USDT',
@@ -236,7 +205,7 @@ export function generateDefaultCashFlows(
   return [
     {
       id: 'cf-farm-1',
-      date: '2025-05-01',
+      date: '2026-01-01',
       type: 'Deposit',
       amount: 5000,
       asset: 'USDT',
@@ -244,7 +213,7 @@ export function generateDefaultCashFlows(
     },
     {
       id: 'cf-farm-2',
-      date: '2025-05-01',
+      date: '2026-01-01',
       type: 'Trade Loss',
       amount: -2545,
       asset: 'USDT',
@@ -252,7 +221,7 @@ export function generateDefaultCashFlows(
     },
     {
       id: 'cf-farm-3',
-      date: '2025-05-01',
+      date: '2026-01-01',
       type: 'Gas',
       amount: -1175,
       asset: 'USDT',
@@ -260,7 +229,7 @@ export function generateDefaultCashFlows(
     },
     {
       id: 'cf-farm-4',
-      date: '2025-05-10',
+      date: '2026-01-10',
       type: 'Withdrawal',
       amount: -500,
       asset: 'USDT',
@@ -268,7 +237,7 @@ export function generateDefaultCashFlows(
     },
     {
       id: 'cf-farm-5',
-      date: '2025-05-12',
+      date: '2026-01-12',
       type: 'Loan In',
       amount: 1000,
       asset: 'USDT',
@@ -332,8 +301,7 @@ export function getInitialAccountData(accountId: string): AccountData {
       };
     }
 
-    case 'farmland':
-    default: {
+    case 'farmland': {
       const tradeLoss = -2545;
       const ugasFee = -1175;
       return {
@@ -355,6 +323,77 @@ export function getInitialAccountData(accountId: string): AccountData {
         },
         dailyLog: generateDefaultDailyLog(5000, 1280, 15, tradeLoss, ugasFee),
         cashFlows: generateDefaultCashFlows('farmland'),
+      };
+    }
+
+    default: {
+      // Dynamic fallback for any user-added or custom account
+      const list = getStoredAccountsList();
+      const meta = list.find((a) => a.id === accountId);
+      const name = meta?.name || accountId;
+      const type = meta?.type || 'Custom Trading Account';
+      const icon = meta?.icon || 'sprout';
+      const themeColor =
+        icon === 'building' || type.includes('Firm')
+          ? '#3b82f6'
+          : icon === 'cpu' || type.includes('Grid') || type.includes('Gadget')
+          ? '#a855f7'
+          : '#10b981';
+
+      let startingCapital = 5000;
+      let targetDailyRatePct = 15.0;
+      let plannedDailyProfit = 1280;
+      let targetCapital = 50000;
+      let tradeLoss = 0;
+      let ugasFee = 0;
+
+      try {
+        const savedAssump = localStorage.getItem(`greenharvest_assumptions_${accountId}`);
+        if (savedAssump) {
+          const parsed = JSON.parse(savedAssump);
+          if (parsed.startingCapital) startingCapital = Number(parsed.startingCapital);
+          if (parsed.targetDailyRatePct) targetDailyRatePct = Number(parsed.targetDailyRatePct);
+          if (parsed.plannedDailyProfit) plannedDailyProfit = Number(parsed.plannedDailyProfit);
+          if (parsed.targetCapital) targetCapital = Number(parsed.targetCapital);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+
+      return {
+        id: accountId,
+        name,
+        tagline: `${type} Strategy Operations`,
+        type: type as any,
+        themeColor,
+        assumptions: {
+          startingCapital,
+          targetDailyRatePct,
+          plannedDailyProfit,
+          targetCapital,
+        },
+        oneOffLosses: {
+          tradeLoss,
+          ugasFee,
+          combinedDailyReturn: tradeLoss + ugasFee,
+        },
+        dailyLog: generateDefaultDailyLog(
+          startingCapital,
+          plannedDailyProfit,
+          targetDailyRatePct,
+          tradeLoss,
+          ugasFee
+        ),
+        cashFlows: [
+          {
+            id: `cf-${accountId}-deposit`,
+            date: '2026-01-01',
+            type: 'Deposit',
+            amount: startingCapital,
+            asset: 'USDT',
+            notes: `Initial capital allocation ($${startingCapital.toLocaleString()})`,
+          },
+        ],
       };
     }
   }
@@ -398,12 +437,235 @@ export function recalculateDailyLog(
  */
 export function loadAccountData(accountId: string): AccountData {
   try {
-    const saved = localStorage.getItem(`greenharvest_account_data_${accountId}_v2`);
-    if (saved) return JSON.parse(saved);
+    const saved =
+      localStorage.getItem(`greenharvest_account_data_${accountId}_v3`) ||
+      localStorage.getItem(`greenharvest_account_data_${accountId}_v2`);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') {
+        parsed.id = accountId;
+        return parsed;
+      }
+    }
   } catch (e) {
     console.warn(`Failed loading account ${accountId}`, e);
   }
   return getInitialAccountData(accountId);
+}
+
+export interface AccountMeta {
+  id: string;
+  name: string;
+  type: string;
+  icon: string;
+}
+
+/**
+ * Loads list of all registered accounts (including custom user-added accounts)
+ */
+export function getStoredAccountsList(): AccountMeta[] {
+  try {
+    const saved =
+      localStorage.getItem('greenharvest_accounts_list_v2') ||
+      localStorage.getItem('greenharvest_accounts_list_v3');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed loading accounts list', e);
+  }
+  return INITIAL_ACCOUNTS;
+}
+
+/**
+ * Persists the accounts list
+ */
+export function saveStoredAccountsList(list: AccountMeta[]): void {
+  try {
+    localStorage.setItem('greenharvest_accounts_list_v2', JSON.stringify(list));
+    localStorage.setItem('greenharvest_accounts_list_v3', JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed saving accounts list', e);
+  }
+}
+
+/**
+ * Renames an existing account across accounts list and account data storage
+ */
+export function renameAccountInStorage(accountId: string, newName: string): AccountMeta[] {
+  const trimmed = newName.trim();
+  if (!trimmed) return getStoredAccountsList();
+
+  const currentList = getStoredAccountsList();
+  const updatedList = currentList.map((acc) =>
+    acc.id === accountId ? { ...acc, name: trimmed } : acc
+  );
+  saveStoredAccountsList(updatedList);
+
+  try {
+    const rawData =
+      localStorage.getItem(`greenharvest_account_data_${accountId}_v3`) ||
+      localStorage.getItem(`greenharvest_account_data_${accountId}_v2`);
+    if (rawData) {
+      const parsed: AccountData = JSON.parse(rawData);
+      parsed.name = trimmed;
+      localStorage.setItem(`greenharvest_account_data_${accountId}_v3`, JSON.stringify(parsed));
+      localStorage.setItem(`greenharvest_account_data_${accountId}_v2`, JSON.stringify(parsed));
+    }
+  } catch (e) {
+    console.warn('Failed updating account data object name', e);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('greenharvest_accounts_updated', {
+        detail: { accountId, name: trimmed, accounts: updatedList },
+      })
+    );
+  }
+
+  return updatedList;
+}
+
+export interface CreateAccountParams {
+  name: string;
+  type?: string;
+  startingCapital: number; // Money in question / starting funds
+  gasFee: number; // Gas fees (UGas / energy fee)
+  tradeLoss?: number; // Realized trading deficit / initial loss
+  targetDailyRatePct?: number; // Target daily rate (default 15%)
+  plannedDailyProfit?: number; // Planned profit (default $1,280)
+  targetCapital?: number; // 2-year goal (default $50,000)
+}
+
+/**
+ * Creates a brand new trading account with user-provided gas fees and money in question
+ */
+export function createNewAccountInStorage(params: CreateAccountParams): {
+  newAccount: AccountMeta;
+  accountData: AccountData;
+} {
+  const name = params.name.trim();
+  const type = params.type || 'Custom';
+  const startCap = Math.max(0, params.startingCapital || 5000);
+  const gasFeeVal = Math.abs(params.gasFee || 0);
+  const tradeLossVal = Math.abs(params.tradeLoss || 0);
+  const targetRate = Math.max(0, params.targetDailyRatePct ?? 15.0);
+  const plannedProfit = Math.max(0, params.plannedDailyProfit ?? 1280);
+  const targetCap = Math.max(startCap, params.targetCapital ?? 50000);
+
+  const safeBaseId =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'account';
+  const newId = `${safeBaseId}-${Date.now().toString().slice(-4)}`;
+
+  const icon =
+    type === 'Agricultural Yield'
+      ? 'sprout'
+      : type === 'Grid / Gadget Bot'
+      ? 'cpu'
+      : 'building';
+
+  const newMeta: AccountMeta = {
+    id: newId,
+    name,
+    type,
+    icon,
+  };
+
+  const initialCombinedLoss = -(tradeLossVal + gasFeeVal);
+
+  // Generate initial cash flows reflecting starting deposit (money in question) and gas fee outflow
+  const initialCashFlows: CashFlowItem[] = [
+    {
+      id: `cf-${newId}-deposit`,
+      date: '2026-01-01',
+      type: 'Deposit',
+      amount: startCap,
+      asset: 'USDT',
+      notes: `Initial capital allocation (Money in Question: $${startCap.toLocaleString()})`,
+    },
+  ];
+
+  if (gasFeeVal > 0) {
+    initialCashFlows.push({
+      id: `cf-${newId}-gas`,
+      date: '2026-01-01',
+      type: 'Gas',
+      amount: -gasFeeVal,
+      asset: 'USDT',
+      notes: `Initial UGas / transaction fee ($${gasFeeVal.toLocaleString()})`,
+    });
+  }
+
+  if (tradeLossVal > 0) {
+    initialCashFlows.push({
+      id: `cf-${newId}-trade`,
+      date: '2026-01-01',
+      type: 'Trade Loss',
+      amount: -tradeLossVal,
+      asset: 'USDT',
+      notes: `Initial realized trade drawdown ($${tradeLossVal.toLocaleString()})`,
+    });
+  }
+
+  const dailyLog = generateDefaultDailyLog(
+    startCap,
+    plannedProfit,
+    targetRate,
+    -tradeLossVal,
+    -gasFeeVal
+  );
+
+  const accountData: AccountData = {
+    id: newId,
+    name,
+    tagline: `${type} Strategy Account Operations`,
+    type: type as any,
+    themeColor: '#10b981',
+    assumptions: {
+      startingCapital: startCap,
+      targetDailyRatePct: targetRate,
+      plannedDailyProfit: plannedProfit,
+      targetCapital: targetCap,
+    },
+    oneOffLosses: {
+      tradeLoss: -tradeLossVal,
+      ugasFee: -gasFeeVal,
+      combinedDailyReturn: initialCombinedLoss,
+    },
+    dailyLog,
+    cashFlows: initialCashFlows,
+  };
+
+  // Persist to storage
+  try {
+    localStorage.setItem(`greenharvest_account_data_${newId}_v3`, JSON.stringify(accountData));
+    localStorage.setItem(`greenharvest_account_data_${newId}_v2`, JSON.stringify(accountData));
+    localStorage.setItem(`greenharvest_assumptions_${newId}`, JSON.stringify(accountData.assumptions));
+  } catch (e) {
+    console.warn('Failed saving new account profile', e);
+  }
+
+  const currentList = getStoredAccountsList();
+  const updatedList = [...currentList, newMeta];
+  saveStoredAccountsList(updatedList);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('greenharvest_accounts_updated', {
+        detail: { accountId: newId, name, accounts: updatedList, newAccount: newMeta },
+      })
+    );
+  }
+
+  return { newAccount: newMeta, accountData };
 }
 
 export interface AccountMetrics {

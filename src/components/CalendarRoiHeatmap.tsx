@@ -46,25 +46,37 @@ export function CalendarRoiHeatmap({
     const map = new Map<string, ParsedDayData>();
     const monthsSet = new Set<string>();
 
-    let firstActiveYear = 2025;
-    let firstActiveMonth = 5;
+    let firstActiveYear = 2026;
+    let firstActiveMonth = 1;
 
     for (const row of dailyLog) {
       if (!row.day) continue;
-      let y = 2025;
-      let m = 5;
+      let y = 2026;
+      let m = 1;
       let d = 1;
 
       if (row.day.includes('/')) {
         const parts = row.day.split('/');
-        m = parseInt(parts[0], 10) || 1;
-        d = parseInt(parts[1], 10) || 1;
-        y = parseInt(parts[2], 10) || 2025;
+        if (parts[0].length === 4) {
+          y = parseInt(parts[0], 10) || 2026;
+          m = parseInt(parts[1], 10) || 1;
+          d = parseInt(parts[2], 10) || 1;
+        } else {
+          m = parseInt(parts[0], 10) || 1;
+          d = parseInt(parts[1], 10) || 1;
+          y = parseInt(parts[2], 10) || 2026;
+        }
       } else if (row.day.includes('-')) {
         const parts = row.day.split('-');
-        y = parseInt(parts[0], 10) || 2025;
-        m = parseInt(parts[1], 10) || 1;
-        d = parseInt(parts[2], 10) || 1;
+        if (parts[0].length === 4) {
+          y = parseInt(parts[0], 10) || 2026;
+          m = parseInt(parts[1], 10) || 1;
+          d = parseInt(parts[2], 10) || 1;
+        } else {
+          m = parseInt(parts[0], 10) || 1;
+          d = parseInt(parts[1], 10) || 1;
+          y = parseInt(parts[2], 10) || 2026;
+        }
       }
 
       const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -338,12 +350,12 @@ export function CalendarRoiHeatmap({
           {/* Quick jump to active trading month */}
           <button
             onClick={() => {
-              setSelectedYear(2025);
-              setSelectedMonth(5);
+              setSelectedYear(2026);
+              setSelectedMonth(1);
             }}
             className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition-colors cursor-pointer"
           >
-            Launch Month (May '25)
+            Start Month (Jan '26)
           </button>
         </div>
       </div>
