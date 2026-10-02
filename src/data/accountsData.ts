@@ -36,6 +36,10 @@ export interface AccountAssumptions {
   targetDailyRatePct: number; // Default 15% (editable yellow cell)
   plannedDailyProfit: number; // Default $1,280 (editable yellow cell)
   targetCapital: number; // Default $50,000
+  loanAmount?: number; // Loan facility / credit line amount ($)
+  withdrawalAmount?: number; // Capital withdrawal / profit sweep ($)
+  ugasFee?: number; // U-Gas / energy fee ($)
+  moneyLost?: number; // Trade drawdown / money lost ($)
 }
 
 export interface AccountData {
@@ -492,6 +496,59 @@ export function saveStoredAccountsList(list: AccountMeta[]): void {
   }
 }
 
+export const USAGE_TIMESTAMPS_KEY = 'greenharvest_account_usage_timestamps';
+
+/**
+ * Records the recent usage timestamp for an account
+ */
+export function recordAccountUsage(accountId: string): void {
+  try {
+    const raw = localStorage.getItem(USAGE_TIMESTAMPS_KEY);
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    map[accountId] = Date.now();
+    localStorage.setItem(USAGE_TIMESTAMPS_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('Failed recording account usage timestamp', e);
+  }
+}
+
+/**
+ * Retrieves the map of account usage timestamps
+ */
+export function getAccountUsageTimestamps(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(USAGE_TIMESTAMPS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export type AccountSortMode = 'recent' | 'alphabetical';
+
+/**
+ * Sorts accounts either alphabetically (A-Z) or by recent usage timestamp (newest first)
+ */
+export function sortAccountsList(
+  list: AccountMeta[],
+  sortMode: AccountSortMode
+): AccountMeta[] {
+  const copy = [...list];
+  if (sortMode === 'alphabetical') {
+    return copy.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }
+  // Sort by recent usage timestamp
+  const timestamps = getAccountUsageTimestamps();
+  return copy.sort((a, b) => {
+    const timeA = timestamps[a.id] || 0;
+    const timeB = timestamps[b.id] || 0;
+    if (timeB !== timeA) {
+      return timeB - timeA;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
 /**
  * Renames an existing account across accounts list and account data storage
  */
@@ -656,6 +713,7 @@ export function createNewAccountInStorage(params: CreateAccountParams): {
   const currentList = getStoredAccountsList();
   const updatedList = [...currentList, newMeta];
   saveStoredAccountsList(updatedList);
+  recordAccountUsage(newId);
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
@@ -729,8 +787,13 @@ export function calculateAccountMetrics(account: AccountData): AccountMetrics {
   const currentLoanBalance = totalLoansIn - totalLoansOut;
   const totalGasFees = totalGas + totalFees;
 
+  // Additional capital deposited beyond the initial starting capital deposit
+  const additionalDeposits = Math.max(0, totalDeposits - startingCapital);
+
+  // Current Capital starts from startingCapital, adds cumulative PnL, plus any additional deposits,
+  // minus withdrawals, plus active loan reserves
   const currentCapital =
-    startingCapital + cumulativePnL + totalDeposits - totalWithdrawals + currentLoanBalance;
+    startingCapital + cumulativePnL + additionalDeposits - totalWithdrawals + currentLoanBalance;
 
   const loanToCapitalRatio =
     currentCapital > 0 ? (currentLoanBalance / currentCapital) * 100 : 0;

@@ -22,6 +22,8 @@ import {
   Sliders,
   Edit2,
   Plus,
+  Clock,
+  ArrowDownAZ,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 
@@ -58,7 +60,13 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { AccountSettingsModal } from './components/AccountSettingsModal';
 import { AddAccountModal } from './components/AddAccountModal';
 import { RenameAccountModal } from './components/RenameAccountModal';
-import { getStoredAccountsList, AccountMeta } from './data/accountsData';
+import {
+  getStoredAccountsList,
+  AccountMeta,
+  AccountSortMode,
+  sortAccountsList,
+  recordAccountUsage,
+} from './data/accountsData';
 
 const LOCAL_STORAGE_TX_KEY = 'crypto_bot_ledger_txs_v1';
 const LOCAL_STORAGE_SHEET_KEY = 'crypto_bot_sheet_meta_v1';
@@ -87,6 +95,24 @@ export default function App() {
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [renameAccountTarget, setRenameAccountTarget] = useState<AccountMeta | null>(null);
 
+  // Sorting mode inside account dropdown ('recent' | 'alphabetical')
+  const [accountSortMode, setAccountSortMode] = useState<AccountSortMode>(() => {
+    try {
+      return (localStorage.getItem('greenharvest_account_sort_mode') as AccountSortMode) || 'recent';
+    } catch {
+      return 'recent';
+    }
+  });
+
+  const handleSetSortMode = (mode: AccountSortMode) => {
+    setAccountSortMode(mode);
+    try {
+      localStorage.setItem('greenharvest_account_sort_mode', mode);
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
   // Synchronize accounts list across any updates in the app
   useEffect(() => {
     const handleAccountsUpdated = () => {
@@ -100,6 +126,7 @@ export default function App() {
     try {
       localStorage.setItem('greenharvest_active_account_id_v3', selectedAccountId);
       localStorage.setItem('greenharvest_active_account_id_v2', selectedAccountId);
+      recordAccountUsage(selectedAccountId);
     } catch (e) {
       console.warn(e);
     }
@@ -117,6 +144,11 @@ export default function App() {
       }
     );
   }, [accountsList, selectedAccountId]);
+
+  // Sorted accounts for the switcher dropdown
+  const sortedAccountsList = useMemo(() => {
+    return sortAccountsList(accountsList, accountSortMode);
+  }, [accountsList, accountSortMode]);
 
   // Daily Profit Target
   const [dailyProfitTarget, setDailyProfitTarget] = useState<number>(() => {
@@ -565,7 +597,11 @@ export default function App() {
               <button
                 id="header-account-selector-btn"
                 onClick={() => setHeaderAccountDropdownOpen(!headerAccountDropdownOpen)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-500 text-xs font-semibold text-white shadow-xs cursor-pointer transition-colors"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white cursor-pointer transition-all duration-200 ease-out transform hover:-translate-y-0.5 active:scale-95 active:translate-y-0 ${
+                  headerAccountDropdownOpen
+                    ? 'scale-[1.03] bg-slate-900 border border-emerald-400 ring-2 ring-emerald-400/40 shadow-[0_0_18px_rgba(16,185,129,0.35)] -translate-y-0.5'
+                    : 'bg-slate-900 border border-slate-700 hover:border-emerald-500/70 hover:shadow-md hover:shadow-emerald-950/30 shadow-xs'
+                }`}
                 title="Switch active trading account"
               >
                 {currentAccountMeta.icon === 'building' || currentAccountMeta.type === 'Firm Arbitrage' ? (
@@ -576,17 +612,64 @@ export default function App() {
                   <Sprout className="w-3.5 h-3.5 text-emerald-400" />
                 )}
                 <span className="font-bold max-w-[120px] truncate">{currentAccountMeta.name}</span>
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${headerAccountDropdownOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    headerAccountDropdownOpen ? 'rotate-180 text-emerald-400' : 'text-slate-400'
+                  }`}
+                />
               </button>
 
               {headerAccountDropdownOpen && (
-                <div className="absolute left-0 sm:right-0 sm:left-auto mt-2 w-64 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800/80">
+                <div className="absolute left-0 sm:right-0 sm:left-auto mt-2 w-64 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-150">
                   <div className="p-2.5 bg-slate-900 text-[11px] font-semibold text-slate-400 flex items-center justify-between">
                     <span>Switch Active Account</span>
                     <span className="text-[10px] font-mono text-emerald-400">{accountsList.length} Accounts</span>
                   </div>
+
+                  {/* Sorting Toggle: Recent vs Alphabetical */}
+                  <div className="px-2.5 py-1.5 bg-slate-950/90 flex items-center justify-between text-xs border-b border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-medium">Sort accounts:</span>
+                    <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+                      <button
+                        type="button"
+                        id="sort-accounts-recent-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSetSortMode('recent');
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                          accountSortMode === 'recent'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                            : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                        }`}
+                        title="Sort by recent usage timestamp"
+                      >
+                        <Clock className="w-3 h-3 text-emerald-400" />
+                        <span>Recent</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        id="sort-accounts-az-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSetSortMode('alphabetical');
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                          accountSortMode === 'alphabetical'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                            : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                        }`}
+                        title="Sort alphabetically (A-Z)"
+                      >
+                        <ArrowDownAZ className="w-3 h-3 text-blue-400" />
+                        <span>A → Z</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="p-1 space-y-0.5 max-h-64 overflow-y-auto">
-                    {accountsList.map((acc) => {
+                    {sortedAccountsList.map((acc) => {
                       const Icon =
                         acc.icon === 'building' || acc.type === 'Firm Arbitrage'
                           ? Building2
@@ -613,6 +696,7 @@ export default function App() {
                           <button
                             onClick={() => {
                               setSelectedAccountId(acc.id);
+                              recordAccountUsage(acc.id);
                               setHeaderAccountDropdownOpen(false);
                               setActiveTab('farmland');
                               showToast(`Switched account to ${acc.name}`, 'info');
@@ -627,20 +711,6 @@ export default function App() {
                           </button>
 
                           <div className="flex items-center gap-1 shrink-0">
-                            {/* Rename pencil button */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setHeaderAccountDropdownOpen(false);
-                                setRenameAccountTarget(acc);
-                              }}
-                              className="p-1 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-700/60 transition-colors cursor-pointer"
-                              title={`Rename ${acc.name}`}
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </button>
-
                             {isSelected && <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />}
                           </div>
                         </div>
@@ -830,6 +900,7 @@ export default function App() {
             summary={summary}
             snapshots={snapshots}
             botStats={botStats}
+            transactions={transactions}
             selectedAccountId={selectedAccountId}
             onSelectAccount={setSelectedAccountId}
             onNavigateToTab={(tab) => setActiveTab(tab)}

@@ -7,6 +7,8 @@ export type TransactionType =
   | 'Gas'
   | 'Interest';
 
+export type MarketCondition = 'Bullish' | 'Bearish' | 'Sideways' | 'Volatile';
+
 export interface Transaction {
   id: string;
   date: string; // YYYY-MM-DD
@@ -19,6 +21,7 @@ export interface Transaction {
   sourceDest?: string;
   botId?: string;
   notes?: string;
+  marketCondition?: MarketCondition;
 }
 
 export interface DailySnapshot {

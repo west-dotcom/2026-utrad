@@ -17,8 +17,46 @@ import {
   TrendingUp,
   TrendingDown,
   RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  Activity,
+  Tag,
 } from 'lucide-react';
-import { Transaction, TransactionType } from '../types';
+import { Transaction, TransactionType, MarketCondition } from '../types';
+
+export const MARKET_CONDITIONS_DATA: {
+  value: MarketCondition;
+  label: string;
+  badge: string;
+  icon: string;
+}[] = [
+  { value: 'Bullish', label: 'Bullish (Buying)', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40', icon: '📈' },
+  { value: 'Bearish', label: 'Bearish (Selling)', badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40', icon: '📉' },
+  { value: 'Sideways', label: 'Sideways (Grid/Range)', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40', icon: '↔️' },
+  { value: 'Volatile', label: 'Volatile (Spikes/Choppy)', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40', icon: '⚡' },
+];
+
+export function getConditionBadge(condition?: MarketCondition, notes?: string, amount?: number) {
+  let cond = condition;
+  if (!cond) {
+    const lower = (notes || '').toLowerCase();
+    if (lower.includes('bull') || lower.includes('buy') || lower.includes('uptrend')) cond = 'Bullish';
+    else if (lower.includes('bear') || lower.includes('short') || lower.includes('downtrend')) cond = 'Bearish';
+    else if (lower.includes('side') || lower.includes('range') || lower.includes('grid')) cond = 'Sideways';
+    else if (lower.includes('volat') || lower.includes('spike') || lower.includes('breakout')) cond = 'Volatile';
+    else if (amount && amount > 0) cond = 'Bullish';
+    else if (amount && amount < 0) cond = 'Bearish';
+    else cond = 'Sideways';
+  }
+
+  const found = MARKET_CONDITIONS_DATA.find((c) => c.value === cond);
+  return found || {
+    value: cond || 'Sideways',
+    label: cond || 'Sideways',
+    badge: 'bg-slate-800 text-slate-300 border-slate-700',
+    icon: '📊',
+  };
+}
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -56,6 +94,7 @@ export function TransactionsView({
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [assetFilter, setAssetFilter] = useState<string>('ALL');
+  const [conditionFilter, setConditionFilter] = useState<string>('ALL');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -65,6 +104,32 @@ export function TransactionsView({
   const [quickType, setQuickType] = useState<TransactionType>('Trade PnL');
   const [quickAmount, setQuickAmount] = useState<string>('350');
   const [quickAsset, setQuickAsset] = useState<string>('USDT');
+  const [quickCondition, setQuickCondition] = useState<MarketCondition>('Bullish');
+  const [quickNotes, setQuickNotes] = useState<string>('');
+
+  // Shift Quick Date helper (+1 day, -1 day, etc.)
+  const shiftQuickDate = (days: number) => {
+    try {
+      const parts = quickDate.split('-');
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        const dateObj = new Date(year, month, day);
+        dateObj.setDate(dateObj.getDate() + days);
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        setQuickDate(`${y}-${m}-${d}`);
+        return;
+      }
+      const fallback = new Date();
+      fallback.setDate(fallback.getDate() + days);
+      setQuickDate(fallback.toISOString().split('T')[0]);
+    } catch {
+      setQuickDate(new Date().toISOString().split('T')[0]);
+    }
+  };
 
   // Inline Row Editing State
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
@@ -72,6 +137,32 @@ export function TransactionsView({
   const [rowEditType, setRowEditType] = useState<TransactionType>('Trade PnL');
   const [rowEditAmount, setRowEditAmount] = useState<string>('');
   const [rowEditAsset, setRowEditAsset] = useState<string>('USDT');
+  const [rowEditCondition, setRowEditCondition] = useState<MarketCondition>('Bullish');
+  const [rowEditNotes, setRowEditNotes] = useState<string>('');
+
+  // Shift row edit date (+1d, -1d)
+  const shiftRowEditDate = (days: number) => {
+    try {
+      const parts = rowEditDate.split('-');
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        const dateObj = new Date(year, month, day);
+        dateObj.setDate(dateObj.getDate() + days);
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        setRowEditDate(`${y}-${m}-${d}`);
+        return;
+      }
+      const fallback = new Date();
+      fallback.setDate(fallback.getDate() + days);
+      setRowEditDate(fallback.toISOString().split('T')[0]);
+    } catch {
+      setRowEditDate(new Date().toISOString().split('T')[0]);
+    }
+  };
 
   // Unique Assets
   const assetOptions = useMemo(() => {
@@ -86,12 +177,21 @@ export function TransactionsView({
       .filter((tx) => {
         if (typeFilter !== 'ALL' && tx.type !== typeFilter) return false;
         if (assetFilter !== 'ALL' && tx.asset !== assetFilter) return false;
+        if (conditionFilter !== 'ALL') {
+          const badge = getConditionBadge(tx.marketCondition, tx.notes, tx.amount);
+          if (badge.value !== conditionFilter) return false;
+        }
         if (searchTerm) {
           const q = searchTerm.toLowerCase();
-          const matchDate = tx.date.includes(q);
+          const matchDate = tx.date.toLowerCase().includes(q);
           const matchType = tx.type.toLowerCase().includes(q);
           const matchAmount = String(tx.amount).includes(q);
-          if (!matchDate && !matchType && !matchAmount) return false;
+          const matchAsset = (tx.asset || '').toLowerCase().includes(q);
+          const matchNotes = (tx.notes || '').toLowerCase().includes(q);
+          const matchCond = (tx.marketCondition || '').toLowerCase().includes(q);
+          if (!matchDate && !matchType && !matchAmount && !matchAsset && !matchNotes && !matchCond) {
+            return false;
+          }
         }
         return true;
       })
@@ -100,7 +200,7 @@ export function TransactionsView({
           ? b.date.localeCompare(a.date)
           : a.date.localeCompare(b.date);
       });
-  }, [transactions, typeFilter, assetFilter, searchTerm, sortOrder]);
+  }, [transactions, typeFilter, assetFilter, conditionFilter, searchTerm, sortOrder]);
 
   const totalPages = Math.ceil(filtered.length / pageSize) || 1;
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -174,7 +274,12 @@ export function TransactionsView({
         amount: amountVal,
         asset: quickAsset.toUpperCase(),
         gasFee: 0,
+        marketCondition: quickCondition,
+        notes: quickNotes.trim(),
       });
+      // Automatically advance date to next day for rapid day-by-day logging
+      shiftQuickDate(1);
+      setQuickNotes('');
     }
   };
 
@@ -185,6 +290,8 @@ export function TransactionsView({
     setRowEditType(tx.type);
     setRowEditAmount(String(tx.amount));
     setRowEditAsset(tx.asset);
+    setRowEditCondition(tx.marketCondition || 'Bullish');
+    setRowEditNotes(tx.notes || '');
   };
 
   // Save Inline Row Edit
@@ -198,6 +305,8 @@ export function TransactionsView({
         amount: parsedAmt,
         asset: rowEditAsset.toUpperCase(),
         gasFee: 0,
+        marketCondition: rowEditCondition,
+        notes: rowEditNotes.trim(),
       });
     }
     setEditingRowId(null);
@@ -220,6 +329,7 @@ export function TransactionsView({
       'Type',
       'Amount',
       'Asset',
+      'Market Condition',
       'Running Capital',
       'Loan Balance',
       'Gas Fee',
@@ -236,6 +346,7 @@ export function TransactionsView({
       `"${tx.type || ''}"`,
       tx.amount !== undefined ? tx.amount.toFixed(2) : '0.00',
       `"${tx.asset || 'USDT'}"`,
+      `"${tx.marketCondition || ''}"`,
       tx.runningCapital !== undefined && tx.runningCapital !== null ? tx.runningCapital.toFixed(2) : '',
       tx.loanBalance !== undefined && tx.loanBalance !== null ? tx.loanBalance.toFixed(2) : '',
       tx.gasFee !== undefined && tx.gasFee !== null ? tx.gasFee.toFixed(2) : '0.00',
@@ -407,19 +518,54 @@ export function TransactionsView({
           </button>
         </div>
 
-        <form onSubmit={handleQuickAddSubmit} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
+        <form onSubmit={handleQuickAddSubmit} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3 items-end">
           {/* Date */}
-          <div>
-            <label className="block text-[11px] font-medium text-slate-300 mb-1">
-              Date (YYYY-MM-DD)
-            </label>
-            <input
-              type="date"
-              required
-              value={quickDate}
-              onChange={(e) => setQuickDate(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-hidden focus:border-emerald-500"
-            />
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[11px] font-medium text-slate-300">
+              <span className="flex items-center gap-1 font-semibold text-slate-200">
+                <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Date (YYYY-MM-DD)</span>
+              </span>
+              <div className="flex items-center gap-1 text-[10px] font-mono">
+                <button
+                  type="button"
+                  onClick={() => shiftQuickDate(-1)}
+                  className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors cursor-pointer"
+                  title="Previous Day (-1 Day)"
+                >
+                  ❮ -1d
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickDate(new Date().toISOString().split('T')[0])}
+                  className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors cursor-pointer"
+                  title="Reset date to today"
+                >
+                  Today
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                id="quick-date-input"
+                type="date"
+                required
+                value={quickDate}
+                onChange={(e) => setQuickDate(e.target.value)}
+                className="w-full bg-slate-950 border-2 border-emerald-500/50 hover:border-emerald-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono font-bold transition-all shadow-inner focus:outline-hidden"
+              />
+              <button
+                type="button"
+                id="quick-next-date-btn"
+                onClick={() => shiftQuickDate(1)}
+                className="shrink-0 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs font-mono flex items-center gap-1 shadow-md hover:shadow-emerald-950/40 border border-emerald-400/40 transition-all cursor-pointer active:scale-95 group"
+                title="Advance to Next Date (+1 Day)"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
           </div>
 
           {/* Type */}
@@ -474,6 +620,25 @@ export function TransactionsView({
             />
           </div>
 
+          {/* Market Condition */}
+          <div>
+            <label className="block text-[11px] font-medium text-slate-300 mb-1 flex items-center gap-1">
+              <Activity className="w-3 h-3 text-emerald-400" />
+              <span>Condition</span>
+            </label>
+            <select
+              value={quickCondition}
+              onChange={(e) => setQuickCondition(e.target.value as MarketCondition)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-medium focus:outline-hidden focus:border-emerald-500"
+            >
+              {MARKET_CONDITIONS_DATA.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.icon} {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Submit Button */}
           <div>
             <button
@@ -486,17 +651,123 @@ export function TransactionsView({
             </button>
           </div>
         </form>
+
+        {/* Quick Note Memo with Market Trading Condition Chips */}
+        <div className="mt-3 pt-3 border-t border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-2.5 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
+              <Tag className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Market Condition Memo:</span>
+            </span>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCondition('Sideways');
+                  setQuickNotes('Sideways consolidation range');
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono border font-semibold transition-all cursor-pointer ${
+                  quickCondition === 'Sideways'
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-500/60 shadow-xs'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+              >
+                ↔️ Sideways
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCondition('Bullish');
+                  setQuickNotes('Buying trend / dip execution');
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono border font-semibold transition-all cursor-pointer ${
+                  quickCondition === 'Bullish' && quickNotes.includes('Buying')
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60 shadow-xs'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+              >
+                🟢 Buying
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCondition('Bearish');
+                  setQuickNotes('Selling pressure / short profit');
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono border font-semibold transition-all cursor-pointer ${
+                  quickCondition === 'Bearish' && quickNotes.includes('Selling')
+                    ? 'bg-rose-950/80 text-rose-300 border-rose-500/60 shadow-xs'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+              >
+                🔴 Selling
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCondition('Bullish');
+                  setQuickNotes('Bullish momentum breakout');
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono border font-semibold transition-all cursor-pointer ${
+                  quickCondition === 'Bullish' && quickNotes.includes('breakout')
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60 shadow-xs'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+              >
+                📈 Bullish
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCondition('Bearish');
+                  setQuickNotes('Bearish drawdown hedge');
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono border font-semibold transition-all cursor-pointer ${
+                  quickCondition === 'Bearish' && quickNotes.includes('hedge')
+                    ? 'bg-rose-950/80 text-rose-300 border-rose-500/60 shadow-xs'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+              >
+                📉 Bearish
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickCondition('Volatile');
+                  setQuickNotes('High volatility whipsaw cycle');
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono border font-semibold transition-all cursor-pointer ${
+                  quickCondition === 'Volatile'
+                    ? 'bg-purple-950/80 text-purple-300 border-purple-500/60 shadow-xs'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+              >
+                ⚡ Volatile
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 max-w-sm flex items-center gap-1.5">
+            <input
+              type="text"
+              placeholder="Note memo (e.g. Sideways range, Buying dip)..."
+              value={quickNotes}
+              onChange={(e) => setQuickNotes(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-emerald-500"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Search and Filters Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
           {/* Search Box */}
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search date, amount, type..."
+              placeholder="Search date, note, type..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -544,6 +815,25 @@ export function TransactionsView({
             </select>
           </div>
 
+          {/* Market Condition Filter */}
+          <div>
+            <select
+              value={conditionFilter}
+              onChange={(e) => {
+                setConditionFilter(e.target.value);
+                setPage(1);
+              }}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-hidden focus:border-emerald-500"
+            >
+              <option value="ALL">All Market Conditions</option>
+              {MARKET_CONDITIONS_DATA.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.icon} {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Sort Order */}
           <div className="flex items-center gap-2">
             <button
@@ -551,7 +841,7 @@ export function TransactionsView({
               className="w-full px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-950 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700 flex items-center justify-center gap-1.5"
             >
               <ArrowUpDown className="w-3.5 h-3.5" />
-              <span>Date: {sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}</span>
+              <span>Date: {sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
             </button>
           </div>
         </div>
@@ -679,12 +969,31 @@ export function TransactionsView({
                       <tr key={tx.id} className="bg-emerald-950/20 border-y-2 border-emerald-500/50">
                         {/* Edit Date */}
                         <td className="py-2 px-3">
-                          <input
-                            type="date"
-                            value={rowEditDate}
-                            onChange={(e) => setRowEditDate(e.target.value)}
-                            className="w-full bg-slate-950 border border-emerald-500 rounded px-2 py-1 text-xs text-white font-mono focus:outline-hidden"
-                          />
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="date"
+                              value={rowEditDate}
+                              onChange={(e) => setRowEditDate(e.target.value)}
+                              className="w-full bg-slate-950 border border-emerald-500 rounded px-2 py-1 text-xs text-white font-mono focus:outline-hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => shiftRowEditDate(-1)}
+                              className="px-1.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[10px] font-mono font-bold transition-colors cursor-pointer shrink-0"
+                              title="Previous Day (-1d)"
+                            >
+                              -1d
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => shiftRowEditDate(1)}
+                              className="px-2 py-1 rounded bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/40 text-[10px] font-mono font-bold transition-all shadow-xs cursor-pointer shrink-0 flex items-center gap-0.5 active:scale-95"
+                              title="Advance to Next Day (+1d)"
+                            >
+                              <span>Next</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
+                          </div>
                         </td>
                         {/* Edit Type */}
                         <td className="py-2 px-2">
