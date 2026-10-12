@@ -24,6 +24,7 @@ import {
   Plus,
   Clock,
   ArrowDownAZ,
+  Download,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 
@@ -54,12 +55,16 @@ import { DailySnapshotView } from './components/DailySnapshotView';
 import { BotAnalyticsView } from './components/BotAnalyticsView';
 import { GoogleSheetsView } from './components/GoogleSheetsView';
 import { FormulaGuideView } from './components/FormulaGuideView';
+import { CompoundingCalculator } from './components/CompoundingCalculator';
 import { AddTransactionModal } from './components/AddTransactionModal';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { AccountSettingsModal } from './components/AccountSettingsModal';
 import { AddAccountModal } from './components/AddAccountModal';
 import { RenameAccountModal } from './components/RenameAccountModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { InstallAppModal } from './components/InstallAppModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   getStoredAccountsList,
   AccountMeta,
@@ -77,6 +82,7 @@ export default function App() {
   // Navigation
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   // Active Multi-Account selector (farmland, firmly, gadget + custom accounts)
   const [accountsList, setAccountsList] = useState<AccountMeta[]>(() => getStoredAccountsList());
@@ -131,6 +137,24 @@ export default function App() {
       console.warn(e);
     }
   }, [selectedAccountId]);
+
+  // Desktop & Windows App Keyboard Shortcuts (Ctrl+N or Alt+N to Record Event)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input or textarea
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey || e.altKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setEditingTx(null);
+        setIsAddModalOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Current active account metadata
   const currentAccountMeta = useMemo(() => {
@@ -537,8 +561,10 @@ export default function App() {
     },
     { id: 'transactions', label: 'Daily Ledger & Manual Entry', icon: TableProperties },
     { id: 'snapshots', label: 'Daily Snapshots (Sheet 2)', icon: Calendar },
+    { id: 'compounding', label: 'Compounding Calculator', icon: Calculator },
     { id: 'sheets', label: 'Google Sheets Hub', icon: FileSpreadsheet },
-    { id: 'formulas', label: 'Formulas & Architecture', icon: Calculator },
+    { id: 'formulas', label: 'Formulas & Architecture', icon: Sparkles },
+    { id: 'install', label: 'Install App (Win/Android)', icon: Download },
   ];
 
   return (
@@ -797,6 +823,9 @@ export default function App() {
               <ThemeToggle />
             </div>
 
+            {/* Install App for Windows & Android */}
+            <PWAInstallButton />
+
             {/* Quick Action: Record Event */}
             <button
               id="header-record-event-btn"
@@ -825,19 +854,28 @@ export default function App() {
           <div className="max-w-7xl mx-auto flex items-center space-x-1 py-1.5 overflow-x-auto no-scrollbar">
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isInstall = item.id === 'install';
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
                   id={`nav-tab-${item.id}`}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 whitespace-nowrap transition-colors ${
-                    isActive
+                  onClick={() => {
+                    if (isInstall) {
+                      setIsInstallModalOpen(true);
+                    } else {
+                      setActiveTab(item.id);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
+                    isInstall
+                      ? 'bg-gradient-to-r from-emerald-950/80 to-teal-950/80 hover:from-emerald-900 hover:to-teal-900 text-emerald-300 border border-emerald-500/40 shadow-xs font-semibold'
+                      : isActive
                       ? 'bg-slate-800 text-emerald-400 font-semibold shadow-xs'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                  <Icon className={`w-3.5 h-3.5 ${isInstall ? 'text-emerald-400' : isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
                 </button>
               );
@@ -850,16 +888,25 @@ export default function App() {
           <div className="sm:hidden border-t border-slate-800 bg-slate-900 p-3 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isInstall = item.id === 'install';
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => {
-                    setActiveTab(item.id);
+                    if (isInstall) {
+                      setIsInstallModalOpen(true);
+                    } else {
+                      setActiveTab(item.id);
+                    }
                     setMobileMenuOpen(false);
                   }}
-                  className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2.5 text-left ${
-                    isActive ? 'bg-slate-800 text-emerald-400' : 'text-slate-400 hover:text-white'
+                  className={`w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2.5 text-left cursor-pointer ${
+                    isInstall
+                      ? 'bg-emerald-950/60 text-emerald-300 font-bold border border-emerald-500/30'
+                      : isActive
+                      ? 'bg-slate-800 text-emerald-400 font-semibold'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -867,9 +914,15 @@ export default function App() {
                 </button>
               );
             })}
-            {/* Mobile Theme Toggle */}
-            <div className="pt-2 border-t border-slate-800">
-              <ThemeToggle variant="mobile" />
+            {/* Mobile Theme Toggle & PWA App Install */}
+            <div className="pt-2 border-t border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400 font-medium">Appearance:</span>
+                <ThemeToggle variant="mobile" />
+              </div>
+              <div className="pt-1">
+                <PWAInstallButton />
+              </div>
             </div>
 
             <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
@@ -908,6 +961,7 @@ export default function App() {
               setEditingTx(null);
               setIsAddModalOpen(true);
             }}
+            onOpenInstallModal={() => setIsInstallModalOpen(true)}
           />
         )}
 
@@ -963,6 +1017,14 @@ export default function App() {
             onPushToSheet={handlePushToSheet}
             onPullFromSheet={handlePullFromSheet}
             isSyncing={isSyncing}
+          />
+        )}
+
+        {activeTab === 'compounding' && (
+          <CompoundingCalculator
+            initialStartingTarget={1}
+            initialMonths={20}
+            onNavigateToTab={(tab) => setActiveTab(tab)}
           />
         )}
 
@@ -1064,6 +1126,15 @@ export default function App() {
           showToast(`Account renamed to "${newName}"!`, 'success');
         }}
       />
+
+      {/* Install App Modal (Windows & Android standalone installer & files) */}
+      <InstallAppModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+      />
+
+      {/* Offline Connectivity Status Badge */}
+      <OfflineIndicator />
     </div>
   );
 }

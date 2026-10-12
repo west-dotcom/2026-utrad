@@ -21,6 +21,7 @@ import {
   BarChart3,
   TrendingDown,
   PlusCircle,
+  Download,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -46,6 +47,9 @@ import { DailyProfitLossBarChart } from './DailyProfitLossBarChart';
 import { CalendarRoiHeatmap } from './CalendarRoiHeatmap';
 import { DateRangePicker, DateRangeFilter } from './DateRangePicker';
 import { BotProfitComparisonChart } from './BotProfitComparisonChart';
+import { RunningCapitalLineChart } from './RunningCapitalLineChart';
+import { KeyMetricsSection } from './KeyMetricsSection';
+import { CompoundingCalculator } from './CompoundingCalculator';
 import { MARKET_CONDITIONS_DATA, getConditionBadge } from './TransactionsView';
 
 interface DashboardViewProps {
@@ -57,6 +61,7 @@ interface DashboardViewProps {
   onSelectAccount?: (id: string) => void;
   onNavigateToTab: (tab: string) => void;
   onOpenAddTx: () => void;
+  onOpenInstallModal?: () => void;
 }
 
 export function DashboardView({
@@ -68,6 +73,7 @@ export function DashboardView({
   onSelectAccount,
   onNavigateToTab,
   onOpenAddTx,
+  onOpenInstallModal,
 }: DashboardViewProps) {
   // Total Aggregate toggle state (false = selected account, true = sum of all 3 accounts)
   const [isAggregate, setIsAggregate] = useState<boolean>(() => {
@@ -493,7 +499,19 @@ export function DashboardView({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {onOpenInstallModal && (
+              <button
+                id="dash-install-app-btn"
+                type="button"
+                onClick={onOpenInstallModal}
+                className="px-3 py-2 text-xs font-bold text-emerald-300 bg-emerald-950/70 hover:bg-emerald-900/80 border border-emerald-500/40 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                title="Install BotLedger on Windows Desktop or Android Mobile"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Install App (Win/Android)</span>
+              </button>
+            )}
             <button
               id="dash-add-tx-btn"
               onClick={onOpenAddTx}
@@ -629,7 +647,15 @@ export function DashboardView({
         </div>
       )}
 
-      {/* 6 CORE METRIC CARDS (Filtered dynamically by selectedAccountId or Aggregate) */}
+      {/* KEY METRICS SECTION: Summary Cards for Total Capital, Total PnL, Win Rate %, Avg Daily Profit */}
+      <KeyMetricsSection
+        metrics={activeMetrics}
+        isAggregate={isAggregate}
+        onNavigateToTab={onNavigateToTab}
+        onOpenAddTx={onOpenAddTx}
+      />
+
+      {/* DETAILED METRIC BREAKDOWN (Filtered dynamically by selectedAccountId or Aggregate) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Metric 1: Current Capital (FILTERED & RECONCILED) */}
         <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-700/80 hover:border-emerald-400/80 rounded-xl p-5 shadow-md hover:shadow-lg hover:shadow-emerald-950/20 transition-all space-y-2.5 relative overflow-hidden group">
@@ -981,6 +1007,15 @@ export function DashboardView({
           </div>
         </div>
       </div>
+
+      {/* 20-MONTH COMPOUNDING CALCULATOR & MILESTONE CHECKLIST (Starting with $1 Target Return) */}
+      <CompoundingCalculator
+        initialStartingTarget={1}
+        initialMonths={20}
+        currentTotalCapital={activeMetrics.currentCapital}
+        onNavigateToTab={onNavigateToTab}
+        isWidget={true}
+      />
 
       {/* SYNCHRONIZED DATE RANGE PICKER COMPONENT */}
       <DateRangePicker
@@ -1547,163 +1582,17 @@ export function DashboardView({
         dateRangeLabel={chartDateFilter.label}
       />
 
-      {/* Main Chart Section: Equity Curve (Capital over Time) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-              <Activity className="w-5 h-5 text-emerald-400" />
-              <span>
-                {isAggregate
-                  ? 'Total Combined Equity Curve (Farmland + Firmly + Gadget)'
-                  : `${activeMetrics.accountName} Equity Curve & Running Capital`}
-              </span>
-            </h3>
-            <p className="text-xs text-slate-400">
-              Mathematical running capital over time, factoring Day 1 initial losses, cash flows, and daily returns.
-            </p>
-          </div>
-
-          {hoveredPoint && (
-            <div className="flex items-center gap-4 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-mono">
-              <span className="text-slate-400">Date: <strong className="text-white">{hoveredPoint.date}</strong></span>
-              <span className="text-slate-400">Capital: <strong className="text-emerald-400">${hoveredPoint.endCapital.toLocaleString()}</strong></span>
-              <span className="text-slate-400">
-                Return: <strong className={hoveredPoint.dailyReturn >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                  {hoveredPoint.dailyReturn >= 0 ? '+' : ''}${hoveredPoint.dailyReturn.toLocaleString()} ({hoveredPoint.dailyReturnPct.toFixed(1)}%)
-                </strong>
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Responsive SVG Chart */}
-        <div className="w-full overflow-x-auto">
-          <div className="min-w-[700px]">
-            <svg
-              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-              className="w-full h-auto select-none"
-            >
-              <defs>
-                <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-
-              {/* Grid Lines */}
-              {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => {
-                const yVal = minCap + pct * capRange;
-                const y = getY(yVal);
-                return (
-                  <g key={idx}>
-                    <line
-                      x1={padding.left}
-                      y1={y}
-                      x2={chartWidth - padding.right}
-                      y2={y}
-                      stroke="#334155"
-                      strokeDasharray="4 4"
-                      strokeWidth="1"
-                    />
-                    <text
-                      x={padding.left - 8}
-                      y={y + 4}
-                      fill="#94a3b8"
-                      fontSize="10"
-                      fontFamily="monospace"
-                      textAnchor="end"
-                    >
-                      ${Math.round(yVal / 1000)}k
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Area under equity line */}
-              {equityAreaPath && (
-                <path d={equityAreaPath} fill="url(#equityGrad)" />
-              )}
-
-              {/* Baseline (Starting Capital) */}
-              <line
-                x1={padding.left}
-                y1={getY(activeMetrics.startingCapital)}
-                x2={chartWidth - padding.right}
-                y2={getY(activeMetrics.startingCapital)}
-                stroke="#64748b"
-                strokeWidth="1.5"
-                strokeDasharray="2 2"
-              />
-
-              {/* Equity Line */}
-              {equityLinePath && (
-                <path
-                  d={equityLinePath}
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              )}
-
-              {/* Data points & hover triggers */}
-              {chartDays.map((s, i) => {
-                const cx = getX(i);
-                const cy = getY(s.endingCapital);
-                const isHovered = hoveredPoint?.date === s.day;
-                return (
-                  <g key={s.id || s.day}>
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={isHovered ? 6 : 3}
-                      fill={isHovered ? '#34d399' : '#10b981'}
-                      stroke="#0f172a"
-                      strokeWidth="2"
-                      className="cursor-pointer transition-all"
-                      onMouseEnter={() =>
-                        setHoveredPoint({
-                          date: s.day,
-                          endCapital: s.endingCapital,
-                          dailyReturnPct: s.dailyReturnPct,
-                          dailyReturn: s.dailyReturn,
-                        })
-                      }
-                    />
-                    {/* Date label at intervals */}
-                    {(i === 0 || i === Math.floor(chartDays.length / 2) || i === chartDays.length - 1) && (
-                      <text
-                        x={cx}
-                        y={chartHeight - 12}
-                        fill="#94a3b8"
-                        fontSize="10"
-                        fontFamily="monospace"
-                        textAnchor="middle"
-                      >
-                        {s.day}
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-0.5 bg-emerald-500 inline-block"></span> Running Capital
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-0.5 bg-slate-500 inline-block border-t border-dashed"></span> Starting Capital Baseline (${activeMetrics.startingCapital.toLocaleString()})
-            </span>
-          </div>
-          <span>Hover data points to inspect daily metrics</span>
-        </div>
-      </div>
+      {/* RECHARTS LINE GRAPH: RUNNING CAPITAL TRENDS OVER TIME */}
+      <RunningCapitalLineChart
+        dailyLog={filteredDailyLogForCharts}
+        accountName={activeMetrics.accountName}
+        isAggregate={isAggregate}
+        startingCapital={activeMetrics.startingCapital}
+        targetCapital={selectedAccountData?.assumptions?.targetCapital || 50000}
+        dateRangeLabel={chartDateFilter.label}
+        onOpenAddTx={onOpenAddTx}
+        onNavigateToTab={onNavigateToTab}
+      />
 
       {/* Two Column Layout: Daily Returns Histogram & Capital Deconstruction */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
